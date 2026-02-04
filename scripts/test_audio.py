@@ -1,1 +1,16 @@
+import pygame
+import time
 
+pygame.mixer.init()
+
+pygame.mixer.music.load("/home/pi/escaperoom/audio/state1.mp3")
+pygame.mixer.music.play(-1)   # loop
+
+time.sleep(5)
+
+hint = pygame.mixer.Sound("/home/pi/escaperoom/audio/hint1.mp3")
+hint.play()
+
+time.sleep(5)
+
+pygame.quit()
