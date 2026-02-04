@@ -2,6 +2,8 @@
 import json
 import os
 import time
+import queue
+import threading
 import pygame
 import paho.mqtt.client as mqtt
 
@@ -11,44 +13,15 @@ AUDIO_DIR = os.path.join(BASE, "audio")
 MQTT_HOST = "localhost"
 MQTT_PORT = 1883
 
-TOPIC_BG = "escape/audio/bg"      # background music (track 1)
-TOPIC_HINT = "escape/audio/hint"  # spoken hints (track 2)
+TOPIC_BG = "escape/audio/bg"       # track 1: state/background
+TOPIC_HINT = "escape/audio/hint"   # track 2: spoken hints
+
+def clamp01(x: float) -> float:
+    return max(0.0, min(1.0, x))
 
 def audio_path(name: str) -> str:
-    # allow "bg.mp3" etc; block path traversal
-    name = name.strip().lstrip("/").replace("..", "")
+    name = (name or "").strip().lstrip("/").replace("..", "")
     return os.path.join(AUDIO_DIR, name)
-
-def load_bg(file_name: str, volume: float = 0.5, loop: bool = True):
-    path = audio_path(file_name)
-    if not os.path.isfile(path):
-        print(f"[BG] file not found: {path}")
-        return
-    pygame.mixer.music.load(path)
-    pygame.mixer.music.set_volume(max(0.0, min(1.0, volume)))
-    pygame.mixer.music.play(-1 if loop else 0)
-    print(f"[BG] playing: {file_name} vol={volume} loop={loop}")
-
-def stop_bg(fade_ms: int = 0):
-    if fade_ms > 0:
-        pygame.mixer.music.fadeout(fade_ms)
-    else:
-        pygame.mixer.music.stop()
-    print(f"[BG] stopped fade_ms={fade_ms}")
-
-def play_hint(file_name: str, volume: float = 1.0):
-    path = audio_path(file_name)
-    if not os.path.isfile(path):
-        print(f"[HINT] file not found: {path}")
-        return
-    snd = pygame.mixer.Sound(path)
-    snd.set_volume(max(0.0, min(1.0, volume)))
-    hint_channel.play(snd)
-    print(f"[HINT] playing: {file_name} vol={volume}")
-
-def stop_hint():
-    hint_channel.stop()
-    print("[HINT] stopped")
 
 def parse_payload(payload: bytes):
     s = payload.decode("utf-8", errors="ignore").strip()
@@ -59,9 +32,81 @@ def parse_payload(payload: bytes):
             return json.loads(s)
         except json.JSONDecodeError:
             return {"raw": s}
-    # allow simple strings like: "start bg.mp3"
     return {"raw": s}
 
+# ---- Background (track 1) ----
+def bg_start(file_name: str, volume: float = 0.5, loop: bool = True, fade_ms: int = 0):
+    path = audio_path(file_name)
+    if not os.path.isfile(path):
+        print(f"[BG] file not found: {path}")
+        return
+    pygame.mixer.music.load(path)
+    pygame.mixer.music.set_volume(clamp01(volume))
+    pygame.mixer.music.play(-1 if loop else 0, fade_ms=fade_ms)
+    print(f"[BG] start file={file_name} vol={volume} loop={loop} fade_ms={fade_ms}")
+
+def bg_stop(fade_ms: int = 0):
+    if fade_ms > 0:
+        pygame.mixer.music.fadeout(fade_ms)
+    else:
+        pygame.mixer.music.stop()
+    print(f"[BG] stop fade_ms={fade_ms}")
+
+def bg_volume(volume: float):
+    pygame.mixer.music.set_volume(clamp01(volume))
+    print(f"[BG] volume {volume}")
+
+# ---- Hints (track 2) ----
+hint_q: "queue.Queue[tuple[str,float]]" = queue.Queue()
+hint_worker_running = True
+
+def hint_play_now(file_name: str, volume: float = 1.0):
+    path = audio_path(file_name)
+    if not os.path.isfile(path):
+        print(f"[HINT] file not found: {path}")
+        return
+    snd = pygame.mixer.Sound(path)
+    snd.set_volume(clamp01(volume))
+    hint_channel.play(snd)
+    print(f"[HINT] play-now file={file_name} vol={volume}")
+
+def hint_stop():
+    # stop current + clear queue
+    while not hint_q.empty():
+        try:
+            hint_q.get_nowait()
+        except queue.Empty:
+            break
+    hint_channel.stop()
+    print("[HINT] stop (and cleared queue)")
+
+def hint_enqueue(file_name: str, volume: float = 1.0):
+    hint_q.put((file_name, float(volume)))
+    print(f"[HINT] queued file={file_name} vol={volume}")
+
+def hint_worker():
+    # plays queued hints sequentially
+    global hint_worker_running
+    while hint_worker_running:
+        try:
+            file_name, vol = hint_q.get(timeout=0.2)
+        except queue.Empty:
+            continue
+
+        # Wait until channel is free
+        while hint_worker_running and hint_channel.get_busy():
+            time.sleep(0.05)
+
+        if not hint_worker_running:
+            break
+
+        hint_play_now(file_name, vol)
+
+        # Wait until it finishes
+        while hint_worker_running and hint_channel.get_busy():
+            time.sleep(0.05)
+
+# ---- MQTT ----
 def on_connect(client, userdata, flags, rc):
     print("[MQTT] connected rc=", rc)
     client.subscribe([(TOPIC_BG, 0), (TOPIC_HINT, 0)])
@@ -70,7 +115,7 @@ def on_message(client, userdata, msg):
     data = parse_payload(msg.payload)
     topic = msg.topic
 
-    # Simple string commands
+    # Backward compatible string commands like: "start state1.mp3"
     raw = data.get("raw")
     if raw:
         parts = raw.split()
@@ -83,18 +128,18 @@ def on_message(client, userdata, msg):
     volume = float(data.get("volume", 0.5 if topic == TOPIC_BG else 1.0))
     fade_ms = int(data.get("fade_ms", 0))
     loop = bool(data.get("loop", True))
+    mode = (data.get("mode") or "interrupt").lower()  # for hints: interrupt|queue
 
     if topic == TOPIC_BG:
         if cmd in ("start", "play"):
             if not file_name:
                 print("[BG] missing file")
                 return
-            load_bg(file_name, volume=volume, loop=loop)
+            bg_start(file_name, volume=volume, loop=loop, fade_ms=fade_ms)
         elif cmd in ("stop", "pause"):
-            stop_bg(fade_ms=fade_ms)
+            bg_stop(fade_ms=fade_ms)
         elif cmd == "volume":
-            pygame.mixer.music.set_volume(max(0.0, min(1.0, volume)))
-            print(f"[BG] volume set {volume}")
+            bg_volume(volume)
         else:
             print("[BG] unknown cmd:", cmd, data)
 
@@ -103,18 +148,26 @@ def on_message(client, userdata, msg):
             if not file_name:
                 print("[HINT] missing file")
                 return
-            play_hint(file_name, volume=volume)
+            if mode == "queue":
+                hint_enqueue(file_name, volume)
+            else:
+                # interrupt
+                hint_channel.stop()
+                hint_play_now(file_name, volume)
         elif cmd == "stop":
-            stop_hint()
+            hint_stop()
         else:
             print("[HINT] unknown cmd:", cmd, data)
 
 def main():
-    global hint_channel
+    global hint_channel, hint_worker_running
 
     pygame.mixer.init()
     pygame.mixer.set_num_channels(8)
-    hint_channel = pygame.mixer.Channel(1)  # dedicated channel for hints
+    hint_channel = pygame.mixer.Channel(1)
+
+    t = threading.Thread(target=hint_worker, daemon=True)
+    t.start()
 
     client = mqtt.Client()
     client.on_connect = on_connect
@@ -129,6 +182,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        hint_worker_running = False
         client.loop_stop()
         pygame.mixer.quit()
 
