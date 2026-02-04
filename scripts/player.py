@@ -3,7 +3,6 @@ import json
 import os
 import time
 import queue
-import threading
 
 import pygame
 import paho.mqtt.client as mqtt
@@ -21,7 +20,6 @@ def clamp01(x: float) -> float:
     return max(0.0, min(1.0, x))
 
 def audio_path(name: str) -> str:
-    # allow "state1.mp3" etc; block path traversal
     name = (name or "").strip().lstrip("/").replace("..", "")
     return os.path.join(AUDIO_DIR, name)
 
@@ -59,60 +57,39 @@ def bg_volume(volume: float):
     print(f"[BG] volume {volume}")
 
 # ---- Hints (track 2) ----
-hint_q: "queue.Queue[tuple[str,float]]" = queue.Queue()
-hint_worker_running = True
+hint_q: "queue.Queue[tuple[str,float,str]]" = queue.Queue()
+# tuple: (file_name, volume, mode) where mode is "queue" or "interrupt"
 
-# Keep a reference alive while playing, otherwise GC can cut playback short
-current_hint_sound = None
+current_hint_sound = None  # keep reference alive while playing
 
 def hint_play_now(file_name: str, volume: float = 1.0):
     global current_hint_sound
     path = audio_path(file_name)
     if not os.path.isfile(path):
         print(f"[HINT] file not found: {path}")
-        return
+        return False
+
     current_hint_sound = pygame.mixer.Sound(path)  # keep reference alive
     current_hint_sound.set_volume(clamp01(volume))
     hint_channel.play(current_hint_sound)
     print(f"[HINT] play-now file={file_name} vol={volume}")
+    return True
 
-def hint_stop():
+def hint_stop(clear_queue: bool = True):
     global current_hint_sound
-    # stop current + clear queue
-    while not hint_q.empty():
-        try:
-            hint_q.get_nowait()
-        except queue.Empty:
-            break
+    if clear_queue:
+        while not hint_q.empty():
+            try:
+                hint_q.get_nowait()
+            except queue.Empty:
+                break
     hint_channel.stop()
     current_hint_sound = None
-    print("[HINT] stop (and cleared queue)")
+    print("[HINT] stop (and cleared queue)" if clear_queue else "[HINT] stop")
 
 def hint_enqueue(file_name: str, volume: float = 1.0):
-    hint_q.put((file_name, float(volume)))
+    hint_q.put((file_name, float(volume), "queue"))
     print(f"[HINT] queued file={file_name} vol={volume}")
-
-def hint_worker():
-    # plays queued hints sequentially
-    global hint_worker_running
-    while hint_worker_running:
-        try:
-            file_name, vol = hint_q.get(timeout=0.2)
-        except queue.Empty:
-            continue
-
-        # Wait until channel is free
-        while hint_worker_running and hint_channel.get_busy():
-            time.sleep(0.05)
-
-        if not hint_worker_running:
-            break
-
-        hint_play_now(file_name, vol)
-
-        # Wait until it finishes
-        while hint_worker_running and hint_channel.get_busy():
-            time.sleep(0.05)
 
 # ---- MQTT ----
 def on_connect(client, userdata, flags, rc):
@@ -157,25 +134,25 @@ def on_message(client, userdata, msg):
                 print("[HINT] missing file")
                 return
             if mode == "queue":
-                hint_enqueue(file_name, volume)
+                hint_q.put((file_name, float(volume), "queue"))
+                print(f"[HINT] queued file={file_name} vol={volume}")
             else:
-                # interrupt
-                hint_channel.stop()
-                hint_play_now(file_name, volume)
+                # interrupt: stop current and clear queue, then play immediately (handled in main loop)
+                hint_q.put((file_name, float(volume), "interrupt"))
+                print(f"[HINT] interrupt request file={file_name} vol={volume}")
         elif cmd == "stop":
-            hint_stop()
+            # handled in main loop: stop + clear queue
+            hint_q.put(("", 0.0, "stop"))
+            print("[HINT] stop request")
         else:
             print("[HINT] unknown cmd:", cmd, data)
 
 def main():
-    global hint_channel, hint_worker_running
+    global hint_channel
 
     pygame.mixer.init()
     pygame.mixer.set_num_channels(8)
     hint_channel = pygame.mixer.Channel(1)
-
-    t = threading.Thread(target=hint_worker, daemon=True)
-    t.start()
 
     client = mqtt.Client()
     client.on_connect = on_connect
@@ -184,13 +161,37 @@ def main():
 
     print("[SYSTEM] ready. Listening for MQTT...")
     client.loop_start()
+
     try:
         while True:
-            time.sleep(1)
+            # Process hint queue ONLY in main thread (pygame-friendly)
+            try:
+                file_name, vol, mode = hint_q.get_nowait()
+            except queue.Empty:
+                file_name = None
+
+            if file_name is not None:
+                if mode == "stop":
+                    hint_stop(clear_queue=True)
+
+                elif mode == "interrupt":
+                    hint_stop(clear_queue=True)
+                    hint_play_now(file_name, vol)
+
+                elif mode == "queue":
+                    # only start next queued hint when channel is free
+                    if not hint_channel.get_busy():
+                        hint_play_now(file_name, vol)
+                    else:
+                        # still playing: put it back and check later
+                        hint_q.put((file_name, vol, "queue"))
+                        time.sleep(0.05)
+
+            time.sleep(0.02)
+
     except KeyboardInterrupt:
         pass
     finally:
-        hint_worker_running = False
         client.loop_stop()
         pygame.mixer.quit()
 
