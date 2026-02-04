@@ -16,6 +16,14 @@ MQTT_PORT = 1883
 
 TOPIC_BG = "escape/audio/bg"
 TOPIC_HINT = "escape/audio/hint"
+TOPIC_STATE = "escape/state"
+
+STATE_TO_FILE = {
+    "state1": "state1.mp3",
+    "state2": "state2.mp3",
+    "state3": "state3.mp3",
+}
+current_state = None
 
 # ======= VOLUMES (JOUW STANDAARD) =======
 BG_DEFAULT_VOL = 0.70
@@ -112,11 +120,40 @@ def hint_stop(clear_queue: bool = True):
 # ---- MQTT ----
 def on_connect(client, userdata, flags, rc):
     print("[MQTT] connected rc=", rc)
-    client.subscribe([(TOPIC_BG, 0), (TOPIC_HINT, 0)])
+    client.subscribe([(TOPIC_BG, 0), (TOPIC_HINT, 0), (TOPIC_STATE, 0)])
 
 def on_message(client, userdata, msg):
     data = parse_payload(msg.payload)
     topic = msg.topic
+    global current_state
+
+    if topic == TOPIC_STATE:
+        s = msg.payload.decode("utf-8", errors="ignore").strip().lower()
+        if not s:
+            print("[STATE] empty payload")
+            return
+
+        # allow JSON too: {"state":"state1"}
+        if s.startswith("{"):
+            try:
+                obj = json.loads(s)
+                s = str(obj.get("state", "")).strip().lower()
+            except Exception:
+                pass
+
+        if s not in STATE_TO_FILE:
+            print("[STATE] unknown state:", s)
+            return
+
+        if s == current_state:
+            print("[STATE] unchanged:", s)
+            return
+
+        current_state = s
+        file_name = STATE_TO_FILE[s]
+        bg_start(file_name, volume=BG_DEFAULT_VOL, loop=True, fade_ms=500)
+        print("[STATE] set:", s, "->", file_name)
+        return
 
     # Backwards compatible: "start state1.mp3"
     raw = data.get("raw")
