@@ -4,6 +4,7 @@ import os
 import time
 import queue
 import threading
+
 import pygame
 import paho.mqtt.client as mqtt
 
@@ -20,6 +21,7 @@ def clamp01(x: float) -> float:
     return max(0.0, min(1.0, x))
 
 def audio_path(name: str) -> str:
+    # allow "state1.mp3" etc; block path traversal
     name = (name or "").strip().lstrip("/").replace("..", "")
     return os.path.join(AUDIO_DIR, name)
 
@@ -60,17 +62,22 @@ def bg_volume(volume: float):
 hint_q: "queue.Queue[tuple[str,float]]" = queue.Queue()
 hint_worker_running = True
 
+# Keep a reference alive while playing, otherwise GC can cut playback short
+current_hint_sound = None
+
 def hint_play_now(file_name: str, volume: float = 1.0):
+    global current_hint_sound
     path = audio_path(file_name)
     if not os.path.isfile(path):
         print(f"[HINT] file not found: {path}")
         return
-    snd = pygame.mixer.Sound(path)
-    snd.set_volume(clamp01(volume))
-    hint_channel.play(snd)
+    current_hint_sound = pygame.mixer.Sound(path)  # keep reference alive
+    current_hint_sound.set_volume(clamp01(volume))
+    hint_channel.play(current_hint_sound)
     print(f"[HINT] play-now file={file_name} vol={volume}")
 
 def hint_stop():
+    global current_hint_sound
     # stop current + clear queue
     while not hint_q.empty():
         try:
@@ -78,6 +85,7 @@ def hint_stop():
         except queue.Empty:
             break
     hint_channel.stop()
+    current_hint_sound = None
     print("[HINT] stop (and cleared queue)")
 
 def hint_enqueue(file_name: str, volume: float = 1.0):
