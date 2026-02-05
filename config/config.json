@@ -1,0 +1,29 @@
+{
+  "mqtt": {
+    "host": "localhost",
+    "port": 1883,
+    "qos": 0,
+    "topics": {
+      "bg": "escape/audio/bg",
+      "hint": "escape/audio/hint",
+      "panic": "escape/audio/panic"
+    }
+  },
+  "audio": {
+    "base_path": "/home/pi/escape-sound-system/audio",
+    "bg_default_volume": 0.70,
+    "hint_default_volume": 0.70,
+    "duck_volume": 0.30,
+    "duck_fade_ms": 500,
+    "restore_fade_ms": 500,
+    "bg_fade_ms": 500
+  },
+  "startup": {
+    "wait_for_network": true,
+    "wait_for_mosquitto": true,
+    "wait_for_audio_device": true
+  },
+  "logging": {
+    "level": "INFO"
+  }
+}
