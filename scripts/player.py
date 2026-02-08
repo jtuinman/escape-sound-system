@@ -9,6 +9,13 @@ from typing import Any, Dict, Optional
 import pygame
 import paho.mqtt.client as mqtt
 
+LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARN": 30, "ERROR": 40}
+
+def log(cfg, level: str, *parts):
+    want = str(cfg.get("logging", {}).get("level", "INFO")).upper()
+    if LOG_LEVELS.get(level, 20) >= LOG_LEVELS.get(want, 20):
+        print(f"[{level}]", *parts, flush=True)
+
 CONFIG_PATH = "/home/pi/escape-sound-system/config/config.json"
 
 running = True
@@ -177,6 +184,7 @@ def main():
     client.subscribe([(topic_bg, qos), (topic_hint, qos), (topic_panic, qos)])
 
     def on_message(client, userdata, msg):
+        log(cfg, "DEBUG", f"recv topic={msg.topic} payload={msg.payload!r}")
         data = parse_payload(msg.payload)
         t = msg.topic
 
