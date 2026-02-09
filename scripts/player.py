@@ -17,6 +17,8 @@ def log(cfg, level: str, *parts):
         print(f"[{level}]", *parts, flush=True)
 
 CONFIG_PATH = "/home/pi/escape-sound-system/config/config.json"
+STATUS_TOPIC = "escape/audio/status"
+STATUS_INTERVAL_S = 5
 
 running = True
 
@@ -182,6 +184,11 @@ def main():
     client = mqtt.Client()
     client.connect(cfg["mqtt"]["host"], int(cfg["mqtt"]["port"]), keepalive=60)
     client.subscribe([(topic_bg, qos), (topic_hint, qos), (topic_panic, qos)])
+    last_status = 0.0
+
+    def publish_status():
+        # retained so dashboards instantly know status after refresh
+        client.publish(STATUS_TOPIC, json.dumps({"status": "ok"}), qos=0, retain=True)
 
     def on_message(client, userdata, msg):
         log(cfg, "DEBUG", f"recv topic={msg.topic} payload={msg.payload!r}")
@@ -240,6 +247,10 @@ def main():
     try:
         while running:
             client.loop(timeout=0.05)
+            now = time.time()
+            if now - last_status >= STATUS_INTERVAL_S:
+                publish_status()
+                last_status = now
             ss.tick()
             time.sleep(0.02)
     finally:
