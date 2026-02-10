@@ -55,6 +55,12 @@ HTML = """<!doctype html>
       font-size: 0.95rem;
       line-height: 1.4;
     }
+    .actions {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
     button {
       border: 0;
       border-radius: 10px;
@@ -79,26 +85,35 @@ HTML = """<!doctype html>
 <body>
   <div class="panel">
     <h1>Escape Sound System</h1>
-    <p>Shut down this Raspberry Pi safely after confirming.</p>
-    <button id="shutdownBtn" type="button">Shutdown Pi</button>
+    <p>Power actions for this Raspberry Pi. Each action asks for confirmation.</p>
+    <div class="actions">
+      <button id="shutdownBtn" type="button">Shutdown Pi</button>
+      <button id="rebootBtn" type="button">Reboot Pi</button>
+    </div>
     <div id="status" aria-live="polite"></div>
   </div>
 
   <script>
-    const button = document.getElementById("shutdownBtn");
+    const shutdownButton = document.getElementById("shutdownBtn");
+    const rebootButton = document.getElementById("rebootBtn");
     const status = document.getElementById("status");
 
-    async function requestShutdown() {
-      const yes = window.confirm("Are you sure you want to shut down this Raspberry Pi now?");
+    function setButtonsDisabled(disabled) {
+      shutdownButton.disabled = disabled;
+      rebootButton.disabled = disabled;
+    }
+
+    async function requestPowerAction(path, confirmMessage, pendingMessage, fallbackError) {
+      const yes = window.confirm(confirmMessage);
       if (!yes) {
         return;
       }
 
-      button.disabled = true;
-      status.textContent = "Sending shutdown request...";
+      setButtonsDisabled(true);
+      status.textContent = pendingMessage;
 
       try {
-        const response = await fetch("/api/shutdown", {
+        const response = await fetch(path, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ confirm: true })
@@ -106,17 +121,29 @@ HTML = """<!doctype html>
 
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error(data.error || "Shutdown failed");
+          throw new Error(data.error || fallbackError);
         }
 
-        status.textContent = data.message || "Shutdown started.";
+        status.textContent = data.message || "Request accepted.";
       } catch (err) {
         status.textContent = "Error: " + err.message;
-        button.disabled = false;
+        setButtonsDisabled(false);
       }
     }
 
-    button.addEventListener("click", requestShutdown);
+    shutdownButton.addEventListener("click", () => requestPowerAction(
+      "/api/shutdown",
+      "Are you sure you want to shut down this Raspberry Pi now?",
+      "Sending shutdown request...",
+      "Shutdown failed"
+    ));
+
+    rebootButton.addEventListener("click", () => requestPowerAction(
+      "/api/reboot",
+      "Are you sure you want to reboot this Raspberry Pi now?",
+      "Sending reboot request...",
+      "Reboot failed"
+    ));
   </script>
 </body>
 </html>
@@ -128,6 +155,13 @@ def shutdown_host():
     time.sleep(1.0)
     subprocess.run(["sync"], check=False)
     subprocess.run(["systemctl", "poweroff"], check=False)
+
+
+def reboot_host():
+    # Give the HTTP response time to be sent before rebooting.
+    time.sleep(1.0)
+    subprocess.run(["sync"], check=False)
+    subprocess.run(["systemctl", "reboot"], check=False)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -152,7 +186,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self):
-        if self.path != "/api/shutdown":
+        if self.path not in ("/api/shutdown", "/api/reboot"):
             self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
             return
 
@@ -169,8 +203,13 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.BAD_REQUEST, {"error": "Missing confirm=true"})
             return
 
-        threading.Thread(target=shutdown_host, daemon=True).start()
-        self._json(HTTPStatus.ACCEPTED, {"message": "Shutdown request accepted. Powering off..."})
+        if self.path == "/api/shutdown":
+            threading.Thread(target=shutdown_host, daemon=True).start()
+            self._json(HTTPStatus.ACCEPTED, {"message": "Shutdown request accepted. Powering off..."})
+            return
+
+        threading.Thread(target=reboot_host, daemon=True).start()
+        self._json(HTTPStatus.ACCEPTED, {"message": "Reboot request accepted. Rebooting..."})
 
     def log_message(self, fmt, *args):
         return

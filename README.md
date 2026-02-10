@@ -41,7 +41,7 @@ python3 /home/pi/escape-sound-system/scripts/web_interface.py
 
 Optional environment variables:
 - `ESCAPE_WEB_HOST` (default: `0.0.0.0`)
-- `ESCAPE_WEB_PORT` (default: `8080`)
+- `ESCAPE_WEB_PORT` (default: `8000`)
 
 Note:
 - The process must have permission to run `systemctl poweroff` (typically run as root or with suitable sudo/systemd configuration).
