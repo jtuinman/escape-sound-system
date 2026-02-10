@@ -18,6 +18,13 @@
     "restore_fade_ms": 500,
     "bg_fade_ms": 500
   },
+  "video": {
+    "base_path": "/home/pi/escape-sound-system/video",
+    "extensions": [".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v"],
+    "mode": "drm",
+    "hdmi_connector": "HDMI-A-1",
+    "player_cmd": ["mpv", "--fs", "--no-terminal", "--really-quiet", "--vo=gpu", "--gpu-context=drm", "--drm-connector=HDMI-A-1"]
+  },
   "startup": {
     "wait_for_network": true,
     "wait_for_mosquitto": true,
