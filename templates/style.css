@@ -1,0 +1,78 @@
+body { font-family: system-ui, Arial, sans-serif; margin: 0; background: #f6f7f8; }
+main { max-width: 720px; margin: 24px auto; padding: 16px; }
+h1 { margin: 0 0 12px; font-size: 24px; }
+.muted { color: #555; margin-bottom: 12px; }
+.error { color: #b00020; }
+
+.list { list-style: none; padding: 0; margin: 0; }
+.row { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: white; border-radius: 10px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+.label { font-weight: 600; }
+
+.pill { padding: 6px 10px; border-radius: 999px; font-weight: 700; background: #ddd; }
+.pill.active { background: #c8f3d0; }
+.pill.inactive { background: #f3c8c8; }
+
+.card { background: white; border-radius: 12px; padding: 14px; margin-bottom: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+.buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.btn { padding: 10px 12px; border: 0; border-radius: 10px; background: #eee; cursor: pointer; font-weight: 700; }
+.btn:hover { background: #e3e3e3; }
+.big { font-size: 22px; font-weight: 800; }
+.mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.timerBox { text-align: right; }
+h2 { margin: 0 0 10px; font-size: 16px; }
+.btn.active-state {
+  background: #2b6cff;
+  color: white;
+  box-shadow: 0 0 0 2px rgba(43,108,255,0.4);
+}
+.right { display: flex; align-items: center; gap: 8px; }
+.btn.small { padding: 8px 10px; border-radius: 10px; font-weight: 800; }
+.btn.danger { background: #ffdddd; }
+.btn.danger:hover { background: #ffcaca; }
+.hidden {
+  display: none !important;
+}
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.header-row h1 {
+  margin: 0;
+}
+/* 2-koloms layout, valt op mobiel terug */
+.layout { display: grid; gap: 16px; grid-template-columns: 1.2fr 0.8fr; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+/* compact input rows */
+.compactRow { align-items: center; justify-content: space-between; }
+
+/* status dot */
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  display: inline-block;
+  border: 1px solid rgba(0,0,0,0.25);
+}
+.dot.unknown { opacity: 0.5; }
+.dot.active { background: #2ecc71; }   /* groen */
+.dot.inactive { background: #e74c3c; } /* rood */
+
+/* hints spacing */
+.hintsList .btn { margin: 6px 0; }
+.hintItem:hover {
+  filter: brightness(0.97);
+}
+/* hint play icon */
+.hintPlay {
+  opacity: 0.6;
+  font-size: 0.9em;
+}
+
+/* subtiele hover voor hele rij */
+.hintItem:hover {
+  background: rgba(0,0,0,0.04);
+}
