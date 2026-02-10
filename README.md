@@ -26,3 +26,34 @@
 sudo apt update
 sudo apt install -y mosquitto mosquitto-clients python3-pygame python3-paho-mqtt
 sudo systemctl enable --now mosquitto
+
+## Web Interface (Shutdown)
+- Script: `scripts/web_interface.py`
+- Serves a simple page with a `Shutdown Pi` button.
+- Uses browser confirmation popup before sending shutdown request.
+- Endpoint: `POST /api/shutdown` with body `{"confirm": true}`
+- Shutdown command is executed after HTTP response for graceful poweroff.
+
+Run manually:
+```bash
+python3 /home/pi/escape-sound-system/scripts/web_interface.py
+```
+
+Optional environment variables:
+- `ESCAPE_WEB_HOST` (default: `0.0.0.0`)
+- `ESCAPE_WEB_PORT` (default: `8080`)
+
+Note:
+- The process must have permission to run `systemctl poweroff` (typically run as root or with suitable sudo/systemd configuration).
+
+### Auto-start on boot (systemd)
+Unit file in repo:
+- `config/systemd/escape-web-interface.service`
+
+Install and enable on Pi:
+```bash
+sudo cp /home/pi/escape-sound-system/config/systemd/escape-web-interface.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now escape-web-interface.service
+sudo systemctl status escape-web-interface.service
+```
