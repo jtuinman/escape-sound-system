@@ -12,6 +12,8 @@
       --muted: #9db1c7;
       --danger: #d64045;
       --danger-hover: #bf3338;
+      --neutral: #6f7782;
+      --neutral-hover: #5f6670;
     }
     * { box-sizing: border-box; }
     body {
@@ -62,6 +64,12 @@
     }
     button:hover { background: var(--danger-hover); }
     button:disabled { opacity: 0.65; cursor: not-allowed; }
+    #rebootBtn {
+      background: var(--neutral);
+    }
+    #rebootBtn:hover {
+      background: var(--neutral-hover);
+    }
     #status {
       margin-top: 14px;
       min-height: 1.2em;
