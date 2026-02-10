@@ -8,10 +8,6 @@
 - 2 audio tracks simultaneously (MP3):
   - Track 1: background music
   - Track 2: spoken hints (interrupts current hint)
-- Video playback support using the same MQTT trigger format (`cmd` + `file`):
-  - If `file` has a video extension (`.mp4`, `.mkv`, `.mov`, `.avi`, `.webm`, `.m4v`), it is played with an external video player.
-  - BG video loops until `stop`/`switch`.
-  - Hint video plays once and then BG volume is restored.
 - Ducking:
   - Default BG volume: 70%
   - Default Hint volume: 70%
@@ -28,27 +24,9 @@
 ## Install
 ```bash
 sudo apt update
-sudo apt install -y mosquitto mosquitto-clients python3-pygame python3-paho-mqtt mpv
+sudo apt install -y mosquitto mosquitto-clients python3-pygame python3-paho-mqtt
 sudo systemctl enable --now mosquitto
 ```
-
-Optional video section in `config/config.json`:
-```json
-"video": {
-  "base_path": "/home/pi/escape-sound-system/video",
-  "extensions": [".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v"],
-  "mode": "auto",
-  "hdmi_connector": "HDMI-A-1",
-  "player_cmd": ["mpv", "--fs", "--no-terminal", "--really-quiet"]
-}
-```
-
-HDMI output behavior:
-- In `mode: "auto"`, the player uses desktop display output when a graphical session exists.
-- In `mode: "auto"` without a graphical session, it targets HDMI via DRM/KMS (`--gpu-context=drm`), default connector `HDMI-A-1`.
-- Set `mode: "drm"` to force HDMI/DRM mode.
-- Set `mode: "x11"` to force desktop-session output.
-- If your monitor is on a different connector, set `hdmi_connector` (for example `HDMI-A-2`).
 
 ## Web Interface (Shutdown)
 - Script: `scripts/web_interface.py`

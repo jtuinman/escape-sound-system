@@ -2,8 +2,6 @@
 import json
 import os
 import signal
-import shlex
-import subprocess
 import sys
 import time
 from typing import Any, Dict, Optional
@@ -21,7 +19,6 @@ def log(cfg, level: str, *parts):
 CONFIG_PATH = "/home/pi/escape-sound-system/config/config.json"
 STATUS_TOPIC = "escape/audio/status"
 STATUS_INTERVAL_S = 5
-DEFAULT_VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v"}
 
 running = True
 
@@ -82,20 +79,6 @@ class SoundSystem:
         self.cfg = cfg
         audio = cfg["audio"]
         self.base_path = audio["base_path"]
-        video = cfg.get("video", {})
-        self.video_base_path = video.get("base_path", self.base_path)
-        self.video_extensions = {
-            str(ext).lower() for ext in video.get("extensions", sorted(DEFAULT_VIDEO_EXTENSIONS))
-        }
-        self.video_mode = str(video.get("mode", "auto")).lower()
-        self.video_hdmi_connector = str(video.get("hdmi_connector", "HDMI-A-1")).strip()
-        raw_video_cmd = video.get("player_cmd")
-        if raw_video_cmd is None:
-            raw_video_cmd = self.default_video_player_cmd()
-        if isinstance(raw_video_cmd, str):
-            self.video_player_cmd = shlex.split(raw_video_cmd)
-        else:
-            self.video_player_cmd = [str(part) for part in raw_video_cmd]
 
         self.bg_default = float(audio["bg_default_volume"])
         self.hint_default = float(audio["hint_default_volume"])
@@ -107,99 +90,13 @@ class SoundSystem:
         self.hint_channel: Optional[pygame.mixer.Channel] = None
         self.current_hint_sound = None
         self.hint_playing = False
-        self.hint_mode = "audio"
-        self.bg_video_proc: Optional[subprocess.Popen] = None
-        self.hint_video_proc: Optional[subprocess.Popen] = None
 
     def init_audio(self):
         pygame.mixer.init()
         pygame.mixer.set_num_channels(8)
         self.hint_channel = pygame.mixer.Channel(1)
 
-    def default_video_player_cmd(self):
-        has_graphical_display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
-        force_drm = self.video_mode == "drm"
-        use_drm = force_drm or (self.video_mode == "auto" and not has_graphical_display)
-
-        cmd = ["mpv", "--fs", "--no-terminal", "--really-quiet"]
-        if use_drm:
-            cmd.extend(["--vo=gpu", "--gpu-context=drm"])
-            if self.video_hdmi_connector:
-                cmd.append(f"--drm-connector={self.video_hdmi_connector}")
-        return cmd
-
-    def is_video_file(self, filename: str) -> bool:
-        _, ext = os.path.splitext((filename or "").strip().lower())
-        return ext in self.video_extensions
-
-    def stop_bg_video(self):
-        if self.bg_video_proc and self.bg_video_proc.poll() is None:
-            self.bg_video_proc.terminate()
-            try:
-                self.bg_video_proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self.bg_video_proc.kill()
-        self.bg_video_proc = None
-
-    def stop_hint_video(self):
-        if self.hint_video_proc and self.hint_video_proc.poll() is None:
-            self.hint_video_proc.terminate()
-            try:
-                self.hint_video_proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self.hint_video_proc.kill()
-        self.hint_video_proc = None
-
-    def play_video(self, filename: str, loop: bool = False, tag: str = "VIDEO") -> Optional[subprocess.Popen]:
-        path = safe_join(self.video_base_path, filename)
-        if not os.path.isfile(path):
-            print(f"[{tag}] file not found: {path}", flush=True)
-            return None
-        if not self.video_player_cmd:
-            print(f"[{tag}] missing player_cmd configuration", flush=True)
-            return None
-
-        cmd = list(self.video_player_cmd)
-        if loop:
-            cmd.append("--loop=inf")
-        cmd.append(path)
-
-        candidates = [cmd]
-        if self.video_mode == "auto" and any(part in ("--gpu-context=drm", "--vo=gpu") for part in cmd):
-            fallback = [part for part in cmd if part not in ("--gpu-context=drm", "--vo=gpu")]
-            fallback = [part for part in fallback if not part.startswith("--drm-connector=")]
-            candidates.append(fallback)
-
-        for candidate in candidates:
-            try:
-                proc = subprocess.Popen(
-                    candidate,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                print(f"[{tag}] play {filename} loop={loop}", flush=True)
-                return proc
-            except Exception as exc:
-                print(f"[{tag}] failed to start player cmd={candidate!r}: {exc}", flush=True)
-
-        return None
-
-    def restore_bg_after_hint(self):
-        self.hint_playing = False
-        self.current_hint_sound = None
-        self.hint_mode = "audio"
-        self.hint_video_proc = None
-        fade_music_to(self.bg_default, self.restore_fade_ms)
-        print("[HINT] finished (restore bg)", flush=True)
-
     def bg_start(self, filename: str):
-        if self.is_video_file(filename):
-            self.stop_bg_video()
-            pygame.mixer.music.stop()
-            self.bg_video_proc = self.play_video(filename, loop=True, tag="BG-VIDEO")
-            return
-
-        self.stop_bg_video()
         path = safe_join(self.base_path, filename)
         if not os.path.isfile(path):
             print(f"[BG] file not found: {path}", flush=True)
@@ -211,16 +108,9 @@ class SoundSystem:
 
     def bg_stop(self):
         pygame.mixer.music.stop()
-        self.stop_bg_video()
         print("[BG] stop", flush=True)
 
     def bg_switch(self, filename: str):
-        if self.is_video_file(filename) or self.bg_video_proc:
-            self.bg_stop()
-            self.bg_start(filename)
-            print(f"[BG] switch -> {filename}", flush=True)
-            return
-
         # no crossfade: fade out old, switch, fade in new
         fade_music_to(0.0, self.bg_fade_ms)
         self.bg_stop()
@@ -232,11 +122,8 @@ class SoundSystem:
         # stop hint + bg and restore volumes to defaults
         if self.hint_channel:
             self.hint_channel.stop()
-        self.stop_hint_video()
-        self.stop_bg_video()
         self.current_hint_sound = None
         self.hint_playing = False
-        self.hint_mode = "audio"
         pygame.mixer.music.stop()
         pygame.mixer.music.set_volume(clamp01(self.bg_default))
         print("[PANIC] stopped hint + bg", flush=True)
@@ -244,10 +131,8 @@ class SoundSystem:
     def hint_stop(self):
         if self.hint_channel:
             self.hint_channel.stop()
-        self.stop_hint_video()
         self.current_hint_sound = None
         self.hint_playing = False
-        self.hint_mode = "audio"
         fade_music_to(self.bg_default, self.restore_fade_ms)
         print("[HINT] stop (restore bg)", flush=True)
 
@@ -258,22 +143,8 @@ class SoundSystem:
 
         # interrupt: stop current hint
         self.hint_channel.stop()
-        self.stop_hint_video()
         self.current_hint_sound = None
         self.hint_playing = False
-        self.hint_mode = "audio"
-
-        if self.is_video_file(filename):
-            fade_music_to(self.duck_volume, self.duck_fade_ms)
-            proc = self.play_video(filename, loop=False, tag="HINT-VIDEO")
-            if not proc:
-                fade_music_to(self.bg_default, self.restore_fade_ms)
-                return
-            self.hint_video_proc = proc
-            self.hint_playing = True
-            self.hint_mode = "video"
-            print(f"[HINT] play video {filename} duck_to={self.duck_volume}", flush=True)
-            return
 
         path = safe_join(self.base_path, filename)
         if not os.path.isfile(path):
@@ -288,21 +159,15 @@ class SoundSystem:
         self.current_hint_sound.set_volume(clamp01(vol))
         self.hint_channel.play(self.current_hint_sound)
         self.hint_playing = True
-        self.hint_mode = "audio"
         print(f"[HINT] play {filename} vol={vol} duck_to={self.duck_volume}", flush=True)
 
     def tick(self):
         # when hint finishes, restore bg volume
-        if not self.hint_playing:
-            return
-
-        if self.hint_mode == "video":
-            if self.hint_video_proc and self.hint_video_proc.poll() is not None:
-                self.restore_bg_after_hint()
-            return
-
-        if self.hint_channel and not self.hint_channel.get_busy():
-            self.restore_bg_after_hint()
+        if self.hint_channel and self.hint_playing and not self.hint_channel.get_busy():
+            self.hint_playing = False
+            self.current_hint_sound = None
+            fade_music_to(self.bg_default, self.restore_fade_ms)
+            print("[HINT] finished (restore bg)", flush=True)
 
 def main():
     cfg = load_config()
@@ -393,8 +258,6 @@ def main():
             client.disconnect()
         except Exception:
             pass
-        ss.stop_hint_video()
-        ss.stop_bg_video()
         pygame.mixer.quit()
 
 if __name__ == "__main__":
