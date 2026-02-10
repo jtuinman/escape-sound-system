@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST = os.environ.get("ESCAPE_WEB_HOST", "0.0.0.0")
 PORT = int(os.environ.get("ESCAPE_WEB_PORT", "8080"))
+SERVICE_NAME = "escape-sound.service"
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "index.html"
 HTML = TEMPLATE_PATH.read_text(encoding="utf-8")
 
@@ -28,6 +29,21 @@ def reboot_host():
     subprocess.run(["systemctl", "reboot"], check=False)
 
 
+def get_service_status() -> dict:
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-active", SERVICE_NAME],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except Exception as exc:
+        return {"service": SERVICE_NAME, "status": "error", "detail": str(exc)}
+
+    status = (result.stdout or result.stderr or "").strip() or "unknown"
+    return {"service": SERVICE_NAME, "status": status}
+
+
 class Handler(BaseHTTPRequestHandler):
     def _json(self, status: int, payload: dict):
         data = json.dumps(payload).encode("utf-8")
@@ -38,6 +54,10 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
+        if self.path == "/api/service-status":
+            self._json(HTTPStatus.OK, get_service_status())
+            return
+
         if self.path not in ("/", "/index.html"):
             self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
             return

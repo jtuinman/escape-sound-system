@@ -36,6 +36,26 @@
       font-size: 0.95rem;
       line-height: 1.4;
     }
+    .serviceStatus {
+      margin: 0 0 10px;
+      font-size: 0.92rem;
+      color: #555;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+      background: #aaa;
+    }
+    .dot.active { background: #2ecc71; }
+    .dot.inactive { background: #e74c3c; }
+    .dot.unknown { background: #f39c12; }
     .actions {
       display: flex;
       gap: 8px;
@@ -77,6 +97,11 @@
   <div class="panel">
     <h1>Escape Sound System</h1>
     <p>Power actions for this Raspberry Pi. Each action asks for confirmation.</p>
+    <div class="serviceStatus">
+      <span id="serviceDot" class="dot unknown" aria-hidden="true"></span>
+      <strong>escape-sound.service:</strong>
+      <span id="serviceStatusText">checking...</span>
+    </div>
     <div class="actions">
       <button id="shutdownBtn" type="button">Shutdown Pi</button>
       <button id="rebootBtn" type="button">Reboot Pi</button>
@@ -88,10 +113,40 @@
     const shutdownButton = document.getElementById("shutdownBtn");
     const rebootButton = document.getElementById("rebootBtn");
     const status = document.getElementById("status");
+    const serviceDot = document.getElementById("serviceDot");
+    const serviceStatusText = document.getElementById("serviceStatusText");
 
     function setButtonsDisabled(disabled) {
       shutdownButton.disabled = disabled;
       rebootButton.disabled = disabled;
+    }
+
+    function setServiceIndicator(state, text) {
+      serviceDot.classList.remove("active", "inactive", "unknown");
+      if (state === "active") {
+        serviceDot.classList.add("active");
+      } else if (state === "inactive") {
+        serviceDot.classList.add("inactive");
+      } else {
+        serviceDot.classList.add("unknown");
+      }
+      serviceStatusText.textContent = text;
+    }
+
+    async function refreshServiceStatus() {
+      try {
+        const response = await fetch("/api/service-status");
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "status request failed");
+        }
+
+        const statusValue = String(data.status || "unknown");
+        const state = statusValue === "active" ? "active" : (statusValue === "inactive" ? "inactive" : "unknown");
+        setServiceIndicator(state, statusValue);
+      } catch (err) {
+        setServiceIndicator("unknown", "unavailable");
+      }
     }
 
     async function requestPowerAction(path, confirmMessage, pendingMessage, fallbackError) {
@@ -135,6 +190,9 @@
       "Sending reboot request...",
       "Reboot failed"
     ));
+
+    refreshServiceStatus();
+    setInterval(refreshServiceStatus, 5000);
   </script>
 </body>
 </html>
