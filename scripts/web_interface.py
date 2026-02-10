@@ -4,150 +4,14 @@ import os
 import subprocess
 import threading
 import time
+from pathlib import Path
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST = os.environ.get("ESCAPE_WEB_HOST", "0.0.0.0")
 PORT = int(os.environ.get("ESCAPE_WEB_PORT", "8080"))
-
-HTML = """<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Escape Sound System</title>
-  <style>
-    :root {
-      --bg: #0b141d;
-      --card: #132333;
-      --text: #eaf2fb;
-      --muted: #9db1c7;
-      --danger: #d64045;
-      --danger-hover: #bf3338;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      background: radial-gradient(circle at top, #1b334a, var(--bg) 60%);
-      color: var(--text);
-      font-family: "Segoe UI", Tahoma, sans-serif;
-    }
-    .panel {
-      width: min(92vw, 420px);
-      padding: 24px;
-      border-radius: 16px;
-      background: linear-gradient(180deg, #1a2e43, var(--card));
-      border: 1px solid #2f4962;
-      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
-      text-align: center;
-    }
-    h1 {
-      margin: 0 0 10px;
-      font-size: 1.25rem;
-      font-weight: 700;
-    }
-    p {
-      margin: 0 0 20px;
-      color: var(--muted);
-      font-size: 0.95rem;
-      line-height: 1.4;
-    }
-    .actions {
-      display: flex;
-      gap: 10px;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-    button {
-      border: 0;
-      border-radius: 10px;
-      padding: 12px 18px;
-      background: var(--danger);
-      color: #fff;
-      font-size: 1rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: background 140ms ease;
-    }
-    button:hover { background: var(--danger-hover); }
-    button:disabled { opacity: 0.65; cursor: not-allowed; }
-    #status {
-      margin-top: 14px;
-      min-height: 1.2em;
-      font-size: 0.9rem;
-      color: #c9d9ea;
-    }
-  </style>
-</head>
-<body>
-  <div class="panel">
-    <h1>Escape Sound System</h1>
-    <p>Power actions for this Raspberry Pi. Each action asks for confirmation.</p>
-    <div class="actions">
-      <button id="shutdownBtn" type="button">Shutdown Pi</button>
-      <button id="rebootBtn" type="button">Reboot Pi</button>
-    </div>
-    <div id="status" aria-live="polite"></div>
-  </div>
-
-  <script>
-    const shutdownButton = document.getElementById("shutdownBtn");
-    const rebootButton = document.getElementById("rebootBtn");
-    const status = document.getElementById("status");
-
-    function setButtonsDisabled(disabled) {
-      shutdownButton.disabled = disabled;
-      rebootButton.disabled = disabled;
-    }
-
-    async function requestPowerAction(path, confirmMessage, pendingMessage, fallbackError) {
-      const yes = window.confirm(confirmMessage);
-      if (!yes) {
-        return;
-      }
-
-      setButtonsDisabled(true);
-      status.textContent = pendingMessage;
-
-      try {
-        const response = await fetch(path, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ confirm: true })
-        });
-
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(data.error || fallbackError);
-        }
-
-        status.textContent = data.message || "Request accepted.";
-      } catch (err) {
-        status.textContent = "Error: " + err.message;
-        setButtonsDisabled(false);
-      }
-    }
-
-    shutdownButton.addEventListener("click", () => requestPowerAction(
-      "/api/shutdown",
-      "Are you sure you want to shut down this Raspberry Pi now?",
-      "Sending shutdown request...",
-      "Shutdown failed"
-    ));
-
-    rebootButton.addEventListener("click", () => requestPowerAction(
-      "/api/reboot",
-      "Are you sure you want to reboot this Raspberry Pi now?",
-      "Sending reboot request...",
-      "Reboot failed"
-    ));
-  </script>
-</body>
-</html>
-"""
+TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "index.html"
+HTML = TEMPLATE_PATH.read_text(encoding="utf-8")
 
 
 def shutdown_host():
@@ -178,7 +42,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
             return
 
-        data = HTML.encode("utf-8")
+        try:
+            data = HTML.encode("utf-8")
+        except Exception:
+            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"Failed to load template: {TEMPLATE_PATH}"})
+            return
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
