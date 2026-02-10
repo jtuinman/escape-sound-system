@@ -9,7 +9,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST = os.environ.get("ESCAPE_WEB_HOST", "0.0.0.0")
-PORT = int(os.environ.get("ESCAPE_WEB_PORT", "8080"))
+PORT = int(os.environ.get("ESCAPE_WEB_PORT", "8000"))
 SERVICE_NAME = "escape-sound.service"
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "index.html"
 HTML = TEMPLATE_PATH.read_text(encoding="utf-8")
