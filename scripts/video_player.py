@@ -57,7 +57,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--connector",
-        default="HDMI-A-1",
+        default="HDMI-A-2",
         help="DRM connector name (for example: HDMI-A-1 or HDMI-A-2)",
     )
     parser.add_argument("--loop", action="store_true", help="Loop video forever")
