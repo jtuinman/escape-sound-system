@@ -105,47 +105,47 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-def do_POST(self):
-    if self.path == "/api/volume":
+    def do_POST(self):
+        if self.path == "/api/volume":
+            try:
+                raw_len = self.headers.get("Content-Length", "0")
+                length = int(raw_len)
+                body = self.rfile.read(length) if length > 0 else b"{}"
+                payload = json.loads(body.decode("utf-8"))
+                vol = int(payload.get("volume"))
+            except Exception:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid volume"})
+                return
+
+            vol = set_volume(vol)
+            self._json(HTTPStatus.OK, {"volume": vol})
+            return
+
+        if self.path not in ("/api/shutdown", "/api/reboot"):
+            self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
+            return
+
         try:
             raw_len = self.headers.get("Content-Length", "0")
             length = int(raw_len)
             body = self.rfile.read(length) if length > 0 else b"{}"
             payload = json.loads(body.decode("utf-8"))
-            vol = int(payload.get("volume"))
-        except Exception:
-            self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid volume"})
+        except (ValueError, json.JSONDecodeError):
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "Invalid JSON body"})
             return
 
-        vol = set_volume(vol)
-        self._json(HTTPStatus.OK, {"volume": vol})
-        return
+        if payload.get("confirm") is not True:
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "Missing confirm=true"})
+            return
 
-    if self.path not in ("/api/shutdown", "/api/reboot"):
-        self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
-        return
+        if self.path == "/api/shutdown":
+            threading.Thread(target=shutdown_host, daemon=True).start()
+            self._json(HTTPStatus.ACCEPTED, {"message": "Shutdown request accepted. Powering off..."})
+            return
 
-    try:
-        raw_len = self.headers.get("Content-Length", "0")
-        length = int(raw_len)
-        body = self.rfile.read(length) if length > 0 else b"{}"
-        payload = json.loads(body.decode("utf-8"))
-    except (ValueError, json.JSONDecodeError):
-        self._json(HTTPStatus.BAD_REQUEST, {"error": "Invalid JSON body"})
-        return
+        threading.Thread(target=reboot_host, daemon=True).start()
+        self._json(HTTPStatus.ACCEPTED, {"message": "Reboot request accepted. Rebooting..."})
 
-    if payload.get("confirm") is not True:
-        self._json(HTTPStatus.BAD_REQUEST, {"error": "Missing confirm=true"})
-        return
-
-    if self.path == "/api/shutdown":
-        threading.Thread(target=shutdown_host, daemon=True).start()
-        self._json(HTTPStatus.ACCEPTED, {"message": "Shutdown request accepted. Powering off..."})
-        return
-
-    threading.Thread(target=reboot_host, daemon=True).start()
-    self._json(HTTPStatus.ACCEPTED, {"message": "Reboot request accepted. Rebooting..."})
-    
     def log_message(self, fmt, *args):
         return
 
