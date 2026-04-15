@@ -85,12 +85,12 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.OK, get_service_status())
             return
 
-        if self.path not in ("/", "/index.html"):
-            self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
-            return
-        
         if self.path == "/api/volume":
             self._json(HTTPStatus.OK, {"volume": get_volume()})
+            return
+
+        if self.path not in ("/", "/index.html"):
+            self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
             return
 
         try:
@@ -98,52 +98,54 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"Failed to load template: {TEMPLATE_PATH}"})
             return
+
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
 
-    def do_POST(self):
-        if self.path not in ("/api/shutdown", "/api/reboot"):
-            self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
-            return
-        if self.path == "/api/volume":
-            try:
-                raw_len = self.headers.get("Content-Length", "0")
-                length = int(raw_len)
-                body = self.rfile.read(length) if length > 0 else b"{}"
-                payload = json.loads(body.decode("utf-8"))
-                vol = int(payload.get("volume"))
-            except Exception:
-                self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid volume"})
-                return
-
-            vol = set_volume(vol)
-            self._json(HTTPStatus.OK, {"volume": vol})
-            return
-        
+def do_POST(self):
+    if self.path == "/api/volume":
         try:
             raw_len = self.headers.get("Content-Length", "0")
             length = int(raw_len)
             body = self.rfile.read(length) if length > 0 else b"{}"
             payload = json.loads(body.decode("utf-8"))
-        except (ValueError, json.JSONDecodeError):
-            self._json(HTTPStatus.BAD_REQUEST, {"error": "Invalid JSON body"})
+            vol = int(payload.get("volume"))
+        except Exception:
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid volume"})
             return
 
-        if payload.get("confirm") is not True:
-            self._json(HTTPStatus.BAD_REQUEST, {"error": "Missing confirm=true"})
-            return
+        vol = set_volume(vol)
+        self._json(HTTPStatus.OK, {"volume": vol})
+        return
 
-        if self.path == "/api/shutdown":
-            threading.Thread(target=shutdown_host, daemon=True).start()
-            self._json(HTTPStatus.ACCEPTED, {"message": "Shutdown request accepted. Powering off..."})
-            return
+    if self.path not in ("/api/shutdown", "/api/reboot"):
+        self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
+        return
 
-        threading.Thread(target=reboot_host, daemon=True).start()
-        self._json(HTTPStatus.ACCEPTED, {"message": "Reboot request accepted. Rebooting..."})
+    try:
+        raw_len = self.headers.get("Content-Length", "0")
+        length = int(raw_len)
+        body = self.rfile.read(length) if length > 0 else b"{}"
+        payload = json.loads(body.decode("utf-8"))
+    except (ValueError, json.JSONDecodeError):
+        self._json(HTTPStatus.BAD_REQUEST, {"error": "Invalid JSON body"})
+        return
 
+    if payload.get("confirm") is not True:
+        self._json(HTTPStatus.BAD_REQUEST, {"error": "Missing confirm=true"})
+        return
+
+    if self.path == "/api/shutdown":
+        threading.Thread(target=shutdown_host, daemon=True).start()
+        self._json(HTTPStatus.ACCEPTED, {"message": "Shutdown request accepted. Powering off..."})
+        return
+
+    threading.Thread(target=reboot_host, daemon=True).start()
+    self._json(HTTPStatus.ACCEPTED, {"message": "Reboot request accepted. Rebooting..."})
+    
     def log_message(self, fmt, *args):
         return
 
