@@ -14,6 +14,33 @@ SERVICE_NAME = "escape-sound.service"
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "index.html"
 HTML = TEMPLATE_PATH.read_text(encoding="utf-8")
 
+def get_volume():
+    try:
+        result = subprocess.run(
+            ["amixer", "get", "Digital"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        out = result.stdout
+
+        # pak percentage (bijv [100%])
+        import re
+        m = re.search(r"\[(\d+)%\]", out)
+        if m:
+            return int(m.group(1))
+    except Exception:
+        pass
+    return 0
+
+
+def set_volume(percent: int):
+    percent = max(0, min(100, int(percent)))
+    subprocess.run(
+        ["amixer", "set", "Digital", f"{percent}%"],
+        check=False,
+    )
+    return percent
 
 def shutdown_host():
     # Give the HTTP response time to be sent before powering off.
@@ -61,6 +88,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.path not in ("/", "/index.html"):
             self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
             return
+        
+        if self.path == "/api/volume":
+            self._json(HTTPStatus.OK, {"volume": get_volume()})
+            return
 
         try:
             data = HTML.encode("utf-8")
@@ -77,7 +108,21 @@ class Handler(BaseHTTPRequestHandler):
         if self.path not in ("/api/shutdown", "/api/reboot"):
             self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
             return
+        if self.path == "/api/volume":
+            try:
+                raw_len = self.headers.get("Content-Length", "0")
+                length = int(raw_len)
+                body = self.rfile.read(length) if length > 0 else b"{}"
+                payload = json.loads(body.decode("utf-8"))
+                vol = int(payload.get("volume"))
+            except Exception:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid volume"})
+                return
 
+            vol = set_volume(vol)
+            self._json(HTTPStatus.OK, {"volume": vol})
+            return
+        
         try:
             raw_len = self.headers.get("Content-Length", "0")
             length = int(raw_len)

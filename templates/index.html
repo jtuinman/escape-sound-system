@@ -107,6 +107,11 @@
       <button id="rebootBtn" type="button">Reboot Pi</button>
     </div>
     <div id="status" aria-live="polite"></div>
+    <div style="margin-top:12px;">
+      <strong>Volume</strong>
+      <input type="range" id="volumeSlider" min="0" max="100" value="100" style="width:100%;">
+      <div id="volumeValue">100%</div>
+    </div>
   </div>
 
   <script>
@@ -176,6 +181,36 @@
         setButtonsDisabled(false);
       }
     }
+
+const volumeSlider = document.getElementById("volumeSlider");
+const volumeValue = document.getElementById("volumeValue");
+
+  async function loadVolume() {
+    try {
+      const r = await fetch("/api/volume");
+      const data = await r.json();
+      volumeSlider.value = data.volume;
+      volumeValue.textContent = data.volume + "%";
+    } catch {}
+  }
+
+  volumeSlider.addEventListener("input", () => {
+    volumeValue.textContent = volumeSlider.value + "%";
+  });
+
+  volumeSlider.addEventListener("change", async () => {
+    try {
+      await fetch("/api/volume", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ volume: volumeSlider.value })
+      });
+    } catch {}
+  });
+
+  loadVolume();
 
     shutdownButton.addEventListener("click", () => requestPowerAction(
       "/api/shutdown",
