@@ -4,6 +4,8 @@ import os
 import subprocess
 import threading
 import time
+import math
+import re
 from pathlib import Path
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,33 +16,73 @@ SERVICE_NAME = "escape-sound.service"
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "index.html"
 HTML = TEMPLATE_PATH.read_text(encoding="utf-8")
 
-def get_volume():
+VOLUME_GAMMA = 0.35
+MIXER_CONTROL = "Digital"
+
+
+def clamp_percent(value: int) -> int:
+    return max(0, min(100, int(value)))
+
+
+def slider_to_mixer_percent(slider_percent: int) -> int:
+    """
+    Convert user-facing slider percent (perceptual scale) to hardware mixer percent.
+    Lower gamma makes low slider values more audible.
+    """
+    slider_percent = clamp_percent(slider_percent)
+    if slider_percent == 0:
+        return 0
+
+    normalized = slider_percent / 100.0
+    mixer = round((normalized ** VOLUME_GAMMA) * 100.0)
+    return clamp_percent(mixer)
+
+
+def mixer_to_slider_percent(mixer_percent: int) -> int:
+    """
+    Convert hardware mixer percent back to user-facing slider percent.
+    Inverse of slider_to_mixer_percent().
+    """
+    mixer_percent = clamp_percent(mixer_percent)
+    if mixer_percent == 0:
+        return 0
+
+    normalized = mixer_percent / 100.0
+    slider = round((normalized ** (1.0 / VOLUME_GAMMA)) * 100.0)
+    return clamp_percent(slider)
+
+
+def get_mixer_percent() -> int:
     try:
         result = subprocess.run(
-            ["amixer", "get", "Digital"],
+            ["amixer", "get", MIXER_CONTROL],
             capture_output=True,
             text=True,
             check=False,
         )
-        out = result.stdout
-
-        # pak percentage (bijv [100%])
-        import re
-        m = re.search(r"\[(\d+)%\]", out)
-        if m:
-            return int(m.group(1))
+        out = result.stdout or ""
+        matches = re.findall(r"\[(\d+)%\]", out)
+        if matches:
+            return clamp_percent(int(matches[-1]))
     except Exception:
         pass
     return 0
 
 
-def set_volume(percent: int):
-    percent = max(0, min(100, int(percent)))
+def get_volume() -> int:
+    mixer_percent = get_mixer_percent()
+    return mixer_to_slider_percent(mixer_percent)
+
+
+def set_volume(slider_percent: int) -> int:
+    slider_percent = clamp_percent(slider_percent)
+    mixer_percent = slider_to_mixer_percent(slider_percent)
+
     subprocess.run(
-        ["amixer", "set", "Digital", f"{percent}%"],
+        ["amixer", "set", MIXER_CONTROL, f"{mixer_percent}%"],
         check=False,
     )
-    return percent
+    return slider_percent
 
 def shutdown_host():
     # Give the HTTP response time to be sent before powering off.
