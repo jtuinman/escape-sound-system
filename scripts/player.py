@@ -19,7 +19,9 @@ def log(cfg, level: str, *parts):
 CONFIG_PATH = "/home/pi/escape-sound-system/config/config.json"
 STATUS_TOPIC = "escape/audio/status"
 STATUS_INTERVAL_S = 5
-
+LANGUAGE_TOPIC = "escape/audio/language"
+SUPPORTED_LANGUAGES = {"nl", "en"}
+DEFAULT_LANGUAGE = "nl"
 running = True
 
 def on_signal(signum, frame):
@@ -79,6 +81,7 @@ class SoundSystem:
         self.cfg = cfg
         audio = cfg["audio"]
         self.base_path = audio["base_path"]
+        self.language = DEFAULT_LANGUAGE
 
         self.bg_default = float(audio["bg_default_volume"])
         self.hint_default = float(audio["hint_default_volume"])
@@ -95,6 +98,16 @@ class SoundSystem:
         pygame.mixer.init()
         pygame.mixer.set_num_channels(8)
         self.hint_channel = pygame.mixer.Channel(1)
+
+    def set_language(self, language: str):
+        language = (language or DEFAULT_LANGUAGE).strip().lower()
+        if language not in SUPPORTED_LANGUAGES:
+            language = DEFAULT_LANGUAGE
+        self.language = language
+        print(f"[LANG] set language to {self.language}", flush=True)
+
+    def hint_base_path(self) -> str:
+        return os.path.join(self.base_path, self.language.upper())
 
     def bg_start(self, filename: str):
         path = safe_join(self.base_path, filename)
@@ -146,7 +159,7 @@ class SoundSystem:
         self.current_hint_sound = None
         self.hint_playing = False
 
-        path = safe_join(self.base_path, filename)
+        path = safe_join(self.hint_base_path(), filename)
         if not os.path.isfile(path):
             print(f"[HINT] file not found: {path}", flush=True)
             return
@@ -183,7 +196,7 @@ def main():
 
     client = mqtt.Client()
     client.connect(cfg["mqtt"]["host"], int(cfg["mqtt"]["port"]), keepalive=60)
-    client.subscribe([(topic_bg, qos), (topic_hint, qos), (topic_panic, qos)])
+    client.subscribe([(topic_bg, qos), (topic_hint, qos), (topic_panic, qos), (LANGUAGE_TOPIC, qos)])
     last_status = 0.0
 
     def publish_status():
@@ -194,6 +207,11 @@ def main():
         log(cfg, "DEBUG", f"recv topic={msg.topic} payload={msg.payload!r}")
         data = parse_payload(msg.payload)
         t = msg.topic
+
+        if t == LANGUAGE_TOPIC:
+            lang = data.get("language") or data.get("raw")
+            ss.set_language(str(lang or DEFAULT_LANGUAGE))
+            return
 
         # allow simple strings too
         raw = data.get("raw")
