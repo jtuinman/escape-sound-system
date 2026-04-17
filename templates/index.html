@@ -149,6 +149,11 @@
       <input type="range" id="bgVolumeSlider" min="0" max="100" value="100" style="width:100%;">
       <div id="bgVolumeValue">100%</div>
     </div>
+    <div style="margin-top:12px;">
+      <strong>Hints</strong>
+      <input type="range" id="hintVolumeSlider" min="0" max="100" value="100" style="width:100%;">
+      <div id="hintVolumeValue">100%</div>
+    </div>
   </div>
 
   <script>
@@ -230,6 +235,22 @@
       bgValue.textContent = val + "%";
 
       fetch("/api/volume/bg", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ volume: val / 100 })
+      });
+    });
+
+    const hintSlider = document.getElementById("hintVolumeSlider");
+    const hintValue = document.getElementById("hintVolumeValue");
+
+    hintSlider.addEventListener("input", () => {
+      const val = hintSlider.value;
+      hintValue.textContent = val + "%";
+
+      fetch("/api/volume/hint", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
