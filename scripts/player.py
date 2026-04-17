@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from fileinput import filename
 import json
 import os
 import signal
