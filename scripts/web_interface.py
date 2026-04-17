@@ -132,7 +132,13 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/volume/bg":
-            self._json(HTTPStatus.OK, {"bg_volume": 100})
+            try:
+                with open("/home/pi/escape-sound-system/config/config.json", "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                bg = float(cfg.get("audio", {}).get("bg_start_volume", 1.0))
+                self._json(HTTPStatus.OK, {"bg_volume": round(bg * 100)})
+            except Exception:
+                self._json(HTTPStatus.OK, {"bg_volume": 100})
             return
 
         if self.path == "/api/volume/hint":
