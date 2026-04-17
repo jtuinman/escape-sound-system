@@ -307,7 +307,17 @@
       } catch { }
     });
 
+    fetch("/api/volume/bg")
+      .then(res => res.json())
+      .then(data => {
+        const val = data.bg_volume || 100;
+        bgSlider.value = val;
+        bgValue.textContent = val + "%";
+      });
+
     loadVolume();
+
+
 
     shutdownButton.addEventListener("click", () => requestPowerAction(
       "/api/shutdown",
