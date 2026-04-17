@@ -85,6 +85,9 @@ class SoundSystem:
 
         self.bg_default = float(audio["bg_default_volume"])
         self.hint_default = float(audio["hint_default_volume"])
+        self.bg_volume = clamp01(self.bg_default)
+        self.hint_volume = clamp01(self.hint_default)
+        self.duck_factor = 0.3
         self.duck_volume = float(audio["duck_volume"])
         self.duck_fade_ms = int(audio["duck_fade_ms"])
         self.restore_fade_ms = int(audio["restore_fade_ms"])
@@ -98,6 +101,23 @@ class SoundSystem:
         pygame.mixer.init()
         pygame.mixer.set_num_channels(8)
         self.hint_channel = pygame.mixer.Channel(1)
+
+    def set_bg_volume(self, volume: float):
+        self.bg_volume = clamp01(float(volume))
+        if pygame.mixer.music.get_busy() and not self.hint_playing:
+            pygame.mixer.music.set_volume(self.bg_volume)
+        print(f"[BG] volume set to {self.bg_volume}", flush=True)
+
+    def set_hint_volume(self, volume: float):
+        self.hint_volume = clamp01(float(volume))
+        if self.current_hint_sound is not None:
+            self.current_hint_sound.set_volume(self.hint_volume)
+        print(f"[HINT] volume set to {self.hint_volume}", flush=True)
+
+    def set_duck_factor(self, percent: float):
+        # verwacht 0–100 vanuit UI
+        self.duck_factor = clamp01(float(percent) / 100.0)
+        print(f"[DUCK] factor set to {self.duck_factor}", flush=True)        
 
     def set_language(self, language: str):
         language = (language or DEFAULT_LANGUAGE).strip().lower()
@@ -115,7 +135,7 @@ class SoundSystem:
             print(f"[BG] file not found: {path}", flush=True)
             return
         pygame.mixer.music.load(path)
-        pygame.mixer.music.set_volume(clamp01(self.bg_default))
+        pygame.mixer.music.set_volume(self.bg_volume)
         pygame.mixer.music.play(-1)
         print(f"[BG] start {filename} vol={self.bg_default}", flush=True)
 
@@ -146,7 +166,7 @@ class SoundSystem:
             self.hint_channel.stop()
         self.current_hint_sound = None
         self.hint_playing = False
-        fade_music_to(self.bg_default, self.restore_fade_ms)
+        fade_music_to(self.bg_volume, self.restore_fade_ms)
         print("[HINT] stop (restore bg)", flush=True)
 
     def hint_play_interrupt(self, filename: str, volume: Optional[float] = None):
@@ -165,9 +185,10 @@ class SoundSystem:
             return
 
         # duck bg then play hint
-        fade_music_to(self.duck_volume, self.duck_fade_ms)
+        ducked_volume = self.bg_volume * self.duck_factor
+        fade_music_to(ducked_volume, self.duck_fade_ms)
 
-        vol = self.hint_default if volume is None else float(volume)
+        vol = self.hint_volume if volume is None else float(volume)
         self.current_hint_sound = pygame.mixer.Sound(path)  # keep reference alive
         self.current_hint_sound.set_volume(clamp01(vol))
         self.hint_channel.play(self.current_hint_sound)
@@ -179,13 +200,16 @@ class SoundSystem:
         if self.hint_channel and self.hint_playing and not self.hint_channel.get_busy():
             self.hint_playing = False
             self.current_hint_sound = None
-            fade_music_to(self.bg_default, self.restore_fade_ms)
+            fade_music_to(self.bg_volume, self.restore_fade_ms)
             print("[HINT] finished (restore bg)", flush=True)
 
 def main():
     cfg = load_config()
 
     topics = cfg["mqtt"]["topics"]
+    topic_volume_bg = "escape/audio/volume/bg"
+    topic_volume_hint = "escape/audio/volume/hint"
+    topic_duck = "escape/audio/duck"    
     topic_bg = topics["bg"]
     topic_hint = topics["hint"]
     topic_panic = topics["panic"]
@@ -196,7 +220,15 @@ def main():
 
     client = mqtt.Client()
     client.connect(cfg["mqtt"]["host"], int(cfg["mqtt"]["port"]), keepalive=60)
-    client.subscribe([(topic_bg, qos), (topic_hint, qos), (topic_panic, qos), (LANGUAGE_TOPIC, qos)])
+    client.subscribe([
+        (topic_bg, qos),
+        (topic_hint, qos),
+        (topic_panic, qos),
+        (LANGUAGE_TOPIC, qos),
+        (topic_volume_bg, qos),
+        (topic_volume_hint, qos),
+        (topic_duck, qos),
+    ])
     last_status = 0.0
 
     def publish_status():
@@ -224,6 +256,30 @@ def main():
         cmd = (data.get("cmd") or "").lower()
         file_name = data.get("file")
         vol = data.get("volume")
+
+        if t == topic_volume_bg:
+            try:
+                val = float(data.get("volume") or data.get("raw"))
+                ss.set_bg_volume(val)
+            except Exception:
+                print("[BG] invalid volume", data, flush=True)
+            return
+
+        if t == topic_volume_hint:
+            try:
+                val = float(data.get("volume") or data.get("raw"))
+                ss.set_hint_volume(val)
+            except Exception:
+                print("[HINT] invalid volume", data, flush=True)
+            return
+
+        if t == topic_duck:
+            try:
+                val = float(data.get("duck") or data.get("raw"))
+                ss.set_duck_factor(val)
+            except Exception:
+                print("[DUCK] invalid value", data, flush=True)
+            return
 
         if t == topic_panic:
             ss.panic()
