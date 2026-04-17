@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from fileinput import filename
 import json
 import os
 import signal
@@ -142,7 +143,7 @@ class SoundSystem:
         pygame.mixer.music.load(path)
         pygame.mixer.music.set_volume(self.bg_volume)
         pygame.mixer.music.play(-1)
-        print(f"[BG] start {filename} vol={self.bg_default}", flush=True)
+        print(f"[BG] start {filename} vol={self.bg_volume}", flush=True)
 
     def bg_stop(self):
         pygame.mixer.music.stop()
