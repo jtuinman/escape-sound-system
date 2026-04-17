@@ -224,7 +224,7 @@ class Handler(BaseHTTPRequestHandler):
                 "-t", "escape/audio/volume/bg",
                 "-m", str(vol)
             ], check=False)
-
+            update_audio_config({"bg_start_volume": vol})
             self._json(HTTPStatus.OK, {"bg_volume": vol})
             return
 
@@ -246,6 +246,7 @@ class Handler(BaseHTTPRequestHandler):
                 "-m", str(vol)
             ], check=False)
 
+            update_audio_config({"hint_start_volume": vol})
             self._json(HTTPStatus.OK, {"hint_volume": vol})
             return
 
@@ -268,6 +269,7 @@ class Handler(BaseHTTPRequestHandler):
                 "-m", str(duck)
             ], check=False)
 
+            update_audio_config({"duck_factor_percent": duck})
             self._json(HTTPStatus.OK, {"duck": duck})
             return
 
