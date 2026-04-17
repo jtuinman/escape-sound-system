@@ -154,6 +154,10 @@
       <input type="range" id="hintVolumeSlider" min="0" max="100" value="100" style="width:100%;">
       <div id="hintVolumeValue">100%</div>
     </div>
+    <div style="margin-top:12px;">
+      <strong>Ducking (%)</strong>
+      <input type="number" id="duckInput" min="0" max="100" value="30" style="width:100%;">
+    </div>
   </div>
 
   <script>
@@ -256,6 +260,25 @@
           "Content-Type": "application/json"
         },
         body: JSON.stringify({ volume: val / 100 })
+      });
+    });
+
+
+    const duckInput = document.getElementById("duckInput");
+
+    duckInput.addEventListener("change", () => {
+      let val = parseFloat(duckInput.value);
+
+      if (isNaN(val)) val = 0;
+      if (val < 0) val = 0;
+      if (val > 100) val = 100;
+
+      fetch("/api/duck", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ duck: val })
       });
     });
 
