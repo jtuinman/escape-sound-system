@@ -16,7 +16,10 @@
     "duck_volume": 0.30,
     "duck_fade_ms": 500,
     "restore_fade_ms": 500,
-    "bg_fade_ms": 500
+    "bg_fade_ms": 500,
+    "bg_start_volume": 0.7,
+    "hint_start_volume": 0.7,
+    "duck_factor_percent": 30
   },
   "startup": {
     "wait_for_network": true,
