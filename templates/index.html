@@ -140,11 +140,6 @@
     </div>
     <div id="status" aria-live="polite"></div>
     <div style="margin-top:12px;">
-      <strong>Volume</strong>
-      <input type="range" id="volumeSlider" min="0" max="100" value="100" style="width:100%;">
-      <div id="volumeValue">100%</div>
-    </div>
-    <div style="margin-top:12px;">
       <strong>Background Music</strong>
       <input type="range" id="bgVolumeSlider" min="0" max="100" value="100" style="width:100%;">
       <div id="bgVolumeValue">100%</div>
@@ -228,9 +223,6 @@
       }
     }
 
-    const volumeSlider = document.getElementById("volumeSlider");
-    const volumeValue = document.getElementById("volumeValue");
-
     const bgSlider = document.getElementById("bgVolumeSlider");
     const bgValue = document.getElementById("bgVolumeValue");
 
@@ -282,31 +274,6 @@
       });
     });
 
-    async function loadVolume() {
-      try {
-        const r = await fetch("/api/volume");
-        const data = await r.json();
-        volumeSlider.value = data.volume;
-        volumeValue.textContent = data.volume + "%";
-      } catch { }
-    }
-
-    volumeSlider.addEventListener("input", () => {
-      volumeValue.textContent = volumeSlider.value + "%";
-    });
-
-    volumeSlider.addEventListener("change", async () => {
-      try {
-        await fetch("/api/volume", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ volume: volumeSlider.value })
-        });
-      } catch { }
-    });
-
     fetch("/api/volume/bg")
       .then(res => res.json())
       .then(data => {
@@ -328,9 +295,6 @@
       .then(data => {
         duckInput.value = data.duck ?? 30;
       });
-
-    loadVolume();
-
 
 
     shutdownButton.addEventListener("click", () => requestPowerAction(
