@@ -245,6 +245,30 @@ def main():
             ss.set_language(str(lang or DEFAULT_LANGUAGE))
             return
 
+        if t == topic_volume_bg:
+            try:
+                val = float(data.get("volume") if data.get("volume") is not None else data.get("raw"))
+                ss.set_bg_volume(val)
+            except Exception:
+                print("[BG] invalid volume", data, flush=True)
+            return
+
+        if t == topic_volume_hint:
+            try:
+                val = float(data.get("volume") if data.get("volume") is not None else data.get("raw"))
+                ss.set_hint_volume(val)
+            except Exception:
+                print("[HINT] invalid volume", data, flush=True)
+            return
+
+        if t == topic_duck:
+            try:
+                val = float(data.get("duck") if data.get("duck") is not None else data.get("raw"))
+                ss.set_duck_factor(val)
+            except Exception:
+                print("[DUCK] invalid value", data, flush=True)
+            return
+
         # allow simple strings too
         raw = data.get("raw")
         if raw:
