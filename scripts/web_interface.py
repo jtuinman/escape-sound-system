@@ -131,6 +131,14 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.OK, {"volume": get_volume()})
             return
 
+        if self.path == "/api/volume/bg":
+            self._json(HTTPStatus.OK, {"bg_volume": 100})
+            return
+
+        if self.path == "/api/volume/hint":
+            self._json(HTTPStatus.OK, {"hint_volume": 100})
+            return
+
         if self.path not in ("/", "/index.html"):
             self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
             return
