@@ -323,6 +323,12 @@
         hintValue.textContent = val + "%";
       });
 
+    fetch("/api/duck")
+      .then(res => res.json())
+      .then(data => {
+        duckInput.value = data.duck ?? 30;
+      });
+
     loadVolume();
 
 

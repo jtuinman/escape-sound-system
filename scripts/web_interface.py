@@ -151,6 +151,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, {"hint_volume": 100})
             return
 
+        if self.path == "/api/duck":
+            try:
+                with open("/home/pi/escape-sound-system/config/config.json", "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                duck = float(cfg.get("audio", {}).get("duck_factor_percent", 30))
+                self._json(HTTPStatus.OK, {"duck": duck})
+            except Exception:
+                self._json(HTTPStatus.OK, {"duck": 30})
+            return
+
         if self.path not in ("/", "/index.html"):
             self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
             return
