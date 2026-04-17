@@ -154,7 +154,7 @@ class SoundSystem:
         fade_music_to(0.0, self.bg_fade_ms)
         self.bg_stop()
         self.bg_start(filename)
-        fade_music_to(self.bg_default, self.bg_fade_ms)
+        fade_music_to(self.bg_volume, self.bg_fade_ms)
         print(f"[BG] switch -> {filename} fade_ms={self.bg_fade_ms}", flush=True)
 
     def panic(self):
@@ -199,7 +199,7 @@ class SoundSystem:
         self.current_hint_sound.set_volume(clamp01(vol))
         self.hint_channel.play(self.current_hint_sound)
         self.hint_playing = True
-        print(f"[HINT] play {filename} vol={vol} duck_to={self.duck_volume}", flush=True)
+        print(f"[HINT] play {filename} vol={vol} duck_to={self.bg_volume * self.duck_factor}", flush=True)
 
     def tick(self):
         # when hint finishes, restore bg volume
@@ -286,30 +286,6 @@ def main():
         cmd = (data.get("cmd") or "").lower()
         file_name = data.get("file")
         vol = data.get("volume")
-
-        if t == topic_volume_bg:
-            try:
-                val = float(data.get("volume") or data.get("raw"))
-                ss.set_bg_volume(val)
-            except Exception:
-                print("[BG] invalid volume", data, flush=True)
-            return
-
-        if t == topic_volume_hint:
-            try:
-                val = float(data.get("volume") or data.get("raw"))
-                ss.set_hint_volume(val)
-            except Exception:
-                print("[HINT] invalid volume", data, flush=True)
-            return
-
-        if t == topic_duck:
-            try:
-                val = float(data.get("duck") or data.get("raw"))
-                ss.set_duck_factor(val)
-            except Exception:
-                print("[DUCK] invalid value", data, flush=True)
-            return
 
         if t == topic_panic:
             ss.panic()
