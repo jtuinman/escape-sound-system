@@ -19,6 +19,20 @@ HTML = TEMPLATE_PATH.read_text(encoding="utf-8")
 VOLUME_GAMMA = 0.35
 MIXER_CONTROL = "Digital"
 
+CONFIG_PATH = Path("/home/pi/escape-sound-system/config/config.json")
+
+
+def update_audio_config(updates: dict):
+    with CONFIG_PATH.open("r", encoding="utf-8") as f:
+        cfg = json.load(f)
+
+    audio = cfg.setdefault("audio", {})
+    audio.update(updates)
+
+    with CONFIG_PATH.open("w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
+        f.write("\n")
+
 
 def clamp_percent(value: int) -> int:
     return max(0, min(100, int(value)))
