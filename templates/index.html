@@ -315,6 +315,14 @@
         bgValue.textContent = val + "%";
       });
 
+    fetch("/api/volume/hint")
+      .then(res => res.json())
+      .then(data => {
+        const val = data.hint_volume || 100;
+        hintSlider.value = val;
+        hintValue.textContent = val + "%";
+      });
+
     loadVolume();
 
 

@@ -142,7 +142,13 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/volume/hint":
-            self._json(HTTPStatus.OK, {"hint_volume": 100})
+            try:
+                with open("/home/pi/escape-sound-system/config/config.json", "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                hint = float(cfg.get("audio", {}).get("hint_start_volume", 1.0))
+                self._json(HTTPStatus.OK, {"hint_volume": round(hint * 100)})
+            except Exception:
+                self._json(HTTPStatus.OK, {"hint_volume": 100})
             return
 
         if self.path not in ("/", "/index.html"):
