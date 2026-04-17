@@ -163,6 +163,48 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.OK, {"volume": vol})
             return
 
+        if self.path == "/api/volume/bg":
+            try:
+                raw_len = self.headers.get("Content-Length", "0")
+                length = int(raw_len)
+                body = self.rfile.read(length) if length > 0 else b"{}"
+                payload = json.loads(body.decode("utf-8"))
+                vol = float(payload.get("volume"))
+            except Exception:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid bg volume"})
+                return
+
+            subprocess.run([
+                "mosquitto_pub",
+                "-h", "localhost",
+                "-t", "escape/audio/volume/bg",
+                "-m", str(vol)
+            ], check=False)
+
+        if self.path == "/api/volume/hint":
+            try:
+                raw_len = self.headers.get("Content-Length", "0")
+                length = int(raw_len)
+                body = self.rfile.read(length) if length > 0 else b"{}"
+                payload = json.loads(body.decode("utf-8"))
+                vol = float(payload.get("volume"))
+            except Exception:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid hint volume"})
+                return
+
+            subprocess.run([
+                "mosquitto_pub",
+                "-h", "localhost",
+                "-t", "escape/audio/volume/hint",
+                "-m", str(vol)
+            ], check=False)
+
+            self._json(HTTPStatus.OK, {"hint_volume": vol})
+            return
+
+            self._json(HTTPStatus.OK, {"bg_volume": vol})
+            return
+
         if self.path not in ("/api/shutdown", "/api/reboot"):
             self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
             return
