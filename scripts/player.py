@@ -88,6 +88,11 @@ class SoundSystem:
         self.bg_volume = clamp01(float(audio.get("bg_start_volume", self.bg_default)))
         self.hint_volume = clamp01(float(audio.get("hint_start_volume", self.hint_default)))
         self.duck_factor = clamp01(float(audio.get("duck_factor_percent", 30)) / 100.0)
+
+        print(
+            f"[CONFIG] bg_start={self.bg_volume} hint_start={self.hint_volume} duck_factor={self.duck_factor}",
+            flush=True
+        )
         self.duck_volume = float(audio["duck_volume"])
         self.duck_fade_ms = int(audio["duck_fade_ms"])
         self.restore_fade_ms = int(audio["restore_fade_ms"])
