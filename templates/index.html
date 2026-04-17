@@ -1,11 +1,15 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Escape Sound System</title>
   <style>
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       font-family: system-ui, Arial, sans-serif;
       margin: 0;
@@ -17,25 +21,29 @@
       justify-content: center;
       padding: 20px;
     }
+
     .panel {
       width: min(92vw, 420px);
       background: white;
       border-radius: 12px;
       padding: 16px;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
       text-align: center;
     }
+
     h1 {
       margin: 0 0 12px;
       font-size: 24px;
       font-weight: 800;
     }
+
     p {
       margin: 0 0 12px;
       color: #555;
       font-size: 0.95rem;
       line-height: 1.4;
     }
+
     .serviceStatus {
       margin: 0 0 10px;
       font-size: 0.92rem;
@@ -46,6 +54,7 @@
       gap: 8px;
       flex-wrap: wrap;
     }
+
     .dot {
       width: 10px;
       height: 10px;
@@ -53,9 +62,19 @@
       display: inline-block;
       background: #aaa;
     }
-    .dot.active { background: #2ecc71; }
-    .dot.inactive { background: #e74c3c; }
-    .dot.unknown { background: #f39c12; }
+
+    .dot.active {
+      background: #2ecc71;
+    }
+
+    .dot.inactive {
+      background: #e74c3c;
+    }
+
+    .dot.unknown {
+      background: #f39c12;
+    }
+
     .actions {
       display: flex;
       gap: 8px;
@@ -63,6 +82,7 @@
       flex-wrap: wrap;
       margin-top: 10px;
     }
+
     button {
       border: 0;
       border-radius: 10px;
@@ -74,17 +94,28 @@
       cursor: pointer;
       transition: background 120ms ease;
     }
-    button:hover { background: #e3e3e3; }
-    button:disabled { opacity: 0.65; cursor: not-allowed; }
+
+    button:hover {
+      background: #e3e3e3;
+    }
+
+    button:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+
     #shutdownBtn {
       background: #ffdddd;
     }
+
     #shutdownBtn:hover {
       background: #ffcaca;
     }
+
     #rebootBtn {
       background: #ddd;
     }
+
     #status {
       margin-top: 14px;
       min-height: 1.2em;
@@ -93,6 +124,7 @@
     }
   </style>
 </head>
+
 <body>
   <div class="panel">
     <h1>Escape Sound System</h1>
@@ -111,6 +143,11 @@
       <strong>Volume</strong>
       <input type="range" id="volumeSlider" min="0" max="100" value="100" style="width:100%;">
       <div id="volumeValue">100%</div>
+    </div>
+    <div style="margin-top:12px;">
+      <strong>Background Music</strong>
+      <input type="range" id="bgVolumeSlider" min="0" max="100" value="100" style="width:100%;">
+      <div id="bgVolumeValue">100%</div>
     </div>
   </div>
 
@@ -182,35 +219,51 @@
       }
     }
 
-const volumeSlider = document.getElementById("volumeSlider");
-const volumeValue = document.getElementById("volumeValue");
+    const volumeSlider = document.getElementById("volumeSlider");
+    const volumeValue = document.getElementById("volumeValue");
 
-  async function loadVolume() {
-    try {
-      const r = await fetch("/api/volume");
-      const data = await r.json();
-      volumeSlider.value = data.volume;
-      volumeValue.textContent = data.volume + "%";
-    } catch {}
-  }
+    const bgSlider = document.getElementById("bgVolumeSlider");
+    const bgValue = document.getElementById("bgVolumeValue");
 
-  volumeSlider.addEventListener("input", () => {
-    volumeValue.textContent = volumeSlider.value + "%";
-  });
+    bgSlider.addEventListener("input", () => {
+      const val = bgSlider.value;
+      bgValue.textContent = val + "%";
 
-  volumeSlider.addEventListener("change", async () => {
-    try {
-      await fetch("/api/volume", {
+      fetch("/api/volume/bg", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ volume: volumeSlider.value })
+        body: JSON.stringify({ volume: val / 100 })
       });
-    } catch {}
-  });
+    });
 
-  loadVolume();
+    async function loadVolume() {
+      try {
+        const r = await fetch("/api/volume");
+        const data = await r.json();
+        volumeSlider.value = data.volume;
+        volumeValue.textContent = data.volume + "%";
+      } catch { }
+    }
+
+    volumeSlider.addEventListener("input", () => {
+      volumeValue.textContent = volumeSlider.value + "%";
+    });
+
+    volumeSlider.addEventListener("change", async () => {
+      try {
+        await fetch("/api/volume", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ volume: volumeSlider.value })
+        });
+      } catch { }
+    });
+
+    loadVolume();
 
     shutdownButton.addEventListener("click", () => requestPowerAction(
       "/api/shutdown",
@@ -230,4 +283,5 @@ const volumeValue = document.getElementById("volumeValue");
     setInterval(refreshServiceStatus, 5000);
   </script>
 </body>
+
 </html>
