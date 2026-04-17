@@ -181,6 +181,9 @@ class Handler(BaseHTTPRequestHandler):
                 "-m", str(vol)
             ], check=False)
 
+            self._json(HTTPStatus.OK, {"bg_volume": vol})
+            return
+
         if self.path == "/api/volume/hint":
             try:
                 raw_len = self.headers.get("Content-Length", "0")
@@ -200,9 +203,6 @@ class Handler(BaseHTTPRequestHandler):
             ], check=False)
 
             self._json(HTTPStatus.OK, {"hint_volume": vol})
-            return
-
-            self._json(HTTPStatus.OK, {"bg_volume": vol})
             return
 
         if self.path not in ("/api/shutdown", "/api/reboot"):
