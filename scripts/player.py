@@ -4,6 +4,7 @@ import os
 import signal
 import sys
 import time
+import traceback
 from typing import Any, Dict, Optional
 
 import pygame
@@ -19,6 +20,8 @@ def log(cfg, level: str, *parts):
 CONFIG_PATH = "/home/pi/escape-sound-system/config/config.json"
 STATUS_TOPIC = "escape/audio/status"
 STATUS_INTERVAL_S = 5
+MQTT_RECONNECT_INTERVAL_S = 5
+MQTT_UNHEALTHY_EXIT_S = 90
 LANGUAGE_TOPIC = "escape/audio/language"
 SUPPORTED_LANGUAGES = {"nl", "en"}
 DEFAULT_LANGUAGE = "nl"
@@ -44,6 +47,21 @@ def safe_join(base: str, name: str) -> str:
 
 def now_ms() -> int:
     return int(time.time() * 1000)
+
+def mqtt_rc_name(rc: Any) -> str:
+    try:
+        return mqtt.error_string(int(rc))
+    except Exception:
+        return str(rc)
+
+def reason_code_value(reason_code: Any) -> int:
+    try:
+        return int(reason_code)
+    except Exception:
+        value = getattr(reason_code, "value", None)
+        if value is None:
+            return 0 if str(reason_code).lower() == "success" else 1
+        return int(value)
 
 def fade_music_to(target: float, duration_ms: int, steps: int = 20):
     """Software fade for music volume (pygame mixer.music has no smooth volume fade)."""
@@ -219,13 +237,7 @@ def main():
     topic_hint = topics["hint"]
     topic_panic = topics["panic"]
     qos = int(cfg["mqtt"].get("qos", 0))
-
-    ss = SoundSystem(cfg)
-    ss.init_audio()
-
-    client = mqtt.Client()
-    client.connect(cfg["mqtt"]["host"], int(cfg["mqtt"]["port"]), keepalive=60)
-    client.subscribe([
+    subscriptions = [
         (topic_bg, qos),
         (topic_hint, qos),
         (topic_panic, qos),
@@ -233,100 +245,202 @@ def main():
         (topic_volume_bg, qos),
         (topic_volume_hint, qos),
         (topic_duck, qos),
-    ])
+    ]
+
+    ss = SoundSystem(cfg)
+    ss.init_audio()
+
+    client = mqtt.Client()
+    client.reconnect_delay_set(min_delay=1, max_delay=30)
+
+    mqtt_state = {
+        "connected": False,
+        "subscriptions_active": False,
+        "pending_subscribe_mid": None,
+        "last_healthy": time.time(),
+        "last_reconnect_attempt": 0.0,
+    }
     last_status = 0.0
 
     def publish_status():
         # retained so dashboards instantly know status after refresh
-        client.publish(STATUS_TOPIC, json.dumps({"status": "ok"}), qos=0, retain=True)
+        if not mqtt_state["connected"]:
+            return
+
+        if mqtt_state["subscriptions_active"]:
+            payload = {"status": "ok", "mqtt": "connected", "subscriptions": "active"}
+        else:
+            payload = {
+                "status": "error",
+                "mqtt": "connected",
+                "subscriptions": "inactive",
+            }
+        client.publish(STATUS_TOPIC, json.dumps(payload), qos=0, retain=True)
+
+    def on_connect(client, userdata, flags, rc, properties=None):
+        if reason_code_value(rc) != 0:
+            mqtt_state["connected"] = False
+            mqtt_state["subscriptions_active"] = False
+            print(f"[MQTT] connect failed rc={rc} ({mqtt_rc_name(rc)})", flush=True)
+            return
+
+        mqtt_state["connected"] = True
+        mqtt_state["subscriptions_active"] = False
+        print(f"[MQTT] connected rc={rc} host={cfg['mqtt']['host']} port={cfg['mqtt']['port']}", flush=True)
+
+        result, mid = client.subscribe(subscriptions)
+        mqtt_state["pending_subscribe_mid"] = mid
+        if result != mqtt.MQTT_ERR_SUCCESS:
+            print(f"[MQTT] subscribe request failed rc={result} ({mqtt_rc_name(result)})", flush=True)
+            return
+
+        topic_names = ", ".join(topic for topic, _ in subscriptions)
+        print(f"[MQTT] subscribe requested mid={mid} topics={topic_names}", flush=True)
+
+    def on_disconnect(client, userdata, *args):
+        reason = args[0] if args else 0
+        if len(args) >= 2:
+            reason = args[1]
+
+        mqtt_state["connected"] = False
+        mqtt_state["subscriptions_active"] = False
+        mqtt_state["pending_subscribe_mid"] = None
+        print(f"[MQTT] disconnected rc={reason} ({mqtt_rc_name(reason)})", flush=True)
+
+    def on_subscribe(client, userdata, mid, granted_qos, properties=None):
+        mqtt_state["subscriptions_active"] = True
+        mqtt_state["last_healthy"] = time.time()
+        print(f"[MQTT] subscribed mid={mid} granted_qos={granted_qos}", flush=True)
 
     def on_message(client, userdata, msg):
-        log(cfg, "DEBUG", f"recv topic={msg.topic} payload={msg.payload!r}")
-        data = parse_payload(msg.payload)
-        t = msg.topic
+        try:
+            log(cfg, "DEBUG", f"recv topic={msg.topic} payload={msg.payload!r}")
+            data = parse_payload(msg.payload)
+            t = msg.topic
 
-        if t == LANGUAGE_TOPIC:
-            lang = data.get("language") or data.get("raw")
-            ss.set_language(str(lang or DEFAULT_LANGUAGE))
-            return
+            if t == LANGUAGE_TOPIC:
+                lang = data.get("language") or data.get("raw")
+                ss.set_language(str(lang or DEFAULT_LANGUAGE))
+                return
 
-        if t == topic_volume_bg:
-            try:
-                val = float(data.get("volume") if data.get("volume") is not None else data.get("raw"))
-                ss.set_bg_volume(val)
-            except Exception:
-                print("[BG] invalid volume", data, flush=True)
-            return
+            if t == topic_volume_bg:
+                try:
+                    val = float(data.get("volume") if data.get("volume") is not None else data.get("raw"))
+                    ss.set_bg_volume(val)
+                except Exception:
+                    print("[BG] invalid volume", data, flush=True)
+                return
 
-        if t == topic_volume_hint:
-            try:
-                val = float(data.get("volume") if data.get("volume") is not None else data.get("raw"))
-                ss.set_hint_volume(val)
-            except Exception:
-                print("[HINT] invalid volume", data, flush=True)
-            return
+            if t == topic_volume_hint:
+                try:
+                    val = float(data.get("volume") if data.get("volume") is not None else data.get("raw"))
+                    ss.set_hint_volume(val)
+                except Exception:
+                    print("[HINT] invalid volume", data, flush=True)
+                return
 
-        if t == topic_duck:
-            try:
-                val = float(data.get("duck") if data.get("duck") is not None else data.get("raw"))
-                ss.set_duck_factor(val)
-            except Exception:
-                print("[DUCK] invalid value", data, flush=True)
-            return
+            if t == topic_duck:
+                try:
+                    val = float(data.get("duck") if data.get("duck") is not None else data.get("raw"))
+                    ss.set_duck_factor(val)
+                except Exception:
+                    print("[DUCK] invalid value", data, flush=True)
+                return
 
-        # allow simple strings too
-        raw = data.get("raw")
-        if raw:
-            parts = raw.split()
-            cmd = parts[0].lower()
-            arg = parts[1] if len(parts) > 1 else None
-            data = {"cmd": cmd, "file": arg}
+            # allow simple strings too
+            raw = data.get("raw")
+            if raw:
+                parts = raw.split()
+                cmd = parts[0].lower()
+                arg = parts[1] if len(parts) > 1 else None
+                data = {"cmd": cmd, "file": arg}
 
-        cmd = (data.get("cmd") or "").lower()
-        file_name = data.get("file")
-        vol = data.get("volume")
+            cmd = (data.get("cmd") or "").lower()
+            file_name = data.get("file")
+            vol = data.get("volume")
 
-        if t == topic_panic:
-            ss.panic()
-            return
+            if t == topic_panic:
+                ss.panic()
+                return
 
-        if t == topic_bg:
-            if cmd == "start":
-                if not file_name:
-                    print("[BG] missing file", flush=True)
-                    return
-                ss.bg_start(file_name)
-            elif cmd == "stop":
-                ss.bg_stop()
-            elif cmd in ("switch", "play"):
-                if not file_name:
-                    print("[BG] missing file", flush=True)
-                    return
-                ss.bg_switch(file_name)
-            else:
-                print("[BG] unknown cmd:", cmd, data, flush=True)
-            return
+            if t == topic_bg:
+                if cmd == "start":
+                    if not file_name:
+                        print("[BG] missing file", flush=True)
+                        return
+                    ss.bg_start(file_name)
+                elif cmd == "stop":
+                    ss.bg_stop()
+                elif cmd in ("switch", "play"):
+                    if not file_name:
+                        print("[BG] missing file", flush=True)
+                        return
+                    ss.bg_switch(file_name)
+                else:
+                    print("[BG] unknown cmd:", cmd, data, flush=True)
+                return
 
-        if t == topic_hint:
-            if cmd == "play":
-                if not file_name:
-                    print("[HINT] missing file", flush=True)
-                    return
-                ss.hint_play_interrupt(file_name, volume=vol)
-            elif cmd == "stop":
-                ss.hint_stop()
-            else:
-                print("[HINT] unknown cmd:", cmd, data, flush=True)
+            if t == topic_hint:
+                if cmd == "play":
+                    if not file_name:
+                        print("[HINT] missing file", flush=True)
+                        return
+                    ss.hint_play_interrupt(file_name, volume=vol)
+                elif cmd == "stop":
+                    ss.hint_stop()
+                else:
+                    print("[HINT] unknown cmd:", cmd, data, flush=True)
+        except Exception:
+            print(f"[MQTT] on_message exception topic={getattr(msg, 'topic', None)}", flush=True)
+            traceback.print_exc()
 
+    client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
+    client.on_subscribe = on_subscribe
     client.on_message = on_message
+    client.will_set(
+        STATUS_TOPIC,
+        json.dumps({"status": "error", "mqtt": "disconnected", "subscriptions": "inactive"}),
+        qos=0,
+        retain=True,
+    )
+    client.connect(cfg["mqtt"]["host"], int(cfg["mqtt"]["port"]), keepalive=60)
 
     print("[SYSTEM] ready", flush=True)
 
     global running
     try:
         while running:
-            client.loop(timeout=0.05)
             now = time.time()
+            try:
+                rc = client.loop(timeout=0.05)
+            except Exception:
+                rc = mqtt.MQTT_ERR_CONN_LOST
+                print("[MQTT] loop exception", flush=True)
+                traceback.print_exc()
+
+            if rc == mqtt.MQTT_ERR_SUCCESS:
+                if mqtt_state["connected"] and mqtt_state["subscriptions_active"]:
+                    mqtt_state["last_healthy"] = now
+            else:
+                mqtt_state["connected"] = False
+                mqtt_state["subscriptions_active"] = False
+                if now - mqtt_state["last_reconnect_attempt"] >= MQTT_RECONNECT_INTERVAL_S:
+                    mqtt_state["last_reconnect_attempt"] = now
+                    print(f"[MQTT] loop rc={rc} ({mqtt_rc_name(rc)}), reconnecting", flush=True)
+                    try:
+                        client.reconnect()
+                    except Exception:
+                        print("[MQTT] reconnect failed", flush=True)
+                        traceback.print_exc()
+
+            if mqtt_state["last_healthy"] and now - mqtt_state["last_healthy"] > MQTT_UNHEALTHY_EXIT_S:
+                print(
+                    f"[MQTT] unhealthy for >{MQTT_UNHEALTHY_EXIT_S}s; exiting for service restart",
+                    flush=True,
+                )
+                return 1
+
             if now - last_status >= STATUS_INTERVAL_S:
                 publish_status()
                 last_status = now
