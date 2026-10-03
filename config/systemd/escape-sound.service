@@ -1,0 +1,17 @@
+[Unit]
+Description=Escape Room Sound System
+After=network-online.target mosquitto.service
+Wants=network-online.target
+Requires=mosquitto.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/escape-sound-system
+ExecStartPre=/home/pi/escape-sound-system/venv/bin/python /home/pi/escape-sound-system/scripts/wait_for_system.py
+ExecStart=/home/pi/escape-sound-system/venv/bin/python /home/pi/escape-sound-system/scripts/player.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

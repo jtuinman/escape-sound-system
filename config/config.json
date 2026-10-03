@@ -11,14 +11,14 @@
   },
   "audio": {
     "base_path": "/home/pi/escape-sound-system/audio",
-    "bg_default_volume": 0.70,
-    "hint_default_volume": 0.70,
-    "duck_volume": 0.30,
+    "bg_default_volume": 0.7,
+    "hint_default_volume": 0.7,
+    "duck_volume": 0.3,
     "duck_fade_ms": 500,
     "restore_fade_ms": 500,
     "bg_fade_ms": 500,
-    "bg_start_volume": 0.15,
-    "hint_start_volume": 0.7,
+    "bg_start_volume": 0.5,
+    "hint_start_volume": 0.5,
     "duck_factor_percent": 30
   },
   "startup": {
